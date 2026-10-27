@@ -1,0 +1,22 @@
+services:
+  cursor-chat:
+    build: .
+    image: cursor-chat:local
+    ports:
+      - "3847:3847"
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "3847"
+      NODE_ENV: production
+      WORKSPACE: /app/data/workspace
+      CURSOR_API_KEY: ${CURSOR_API_KEY:-}
+      AUTH_USERNAME: ${AUTH_USERNAME:-}
+      AUTH_PASSWORD: ${AUTH_PASSWORD:-}
+      AUTH_SECRET: ${AUTH_SECRET:-}
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - ./data:/app/data
+    init: true
+    restart: unless-stopped

@@ -130,9 +130,8 @@ export async function acquireAgent(input: {
     ...(Object.keys(input.options.mcpServers).length > 0
       ? { mcpServers: input.options.mcpServers }
       : {}),
-    ...(input.options.systemPrompt?.trim()
-      ? { systemPrompt: input.options.systemPrompt.trim() }
-      : {}),
+    // Do not pass systemPrompt to the SDK. Many accounts reject custom
+    // system prompts; reply style is applied as a message prefix instead.
   } as Parameters<typeof Agent.create>[0];
 
   const agent = input.agentId

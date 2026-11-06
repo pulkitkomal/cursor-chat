@@ -129,14 +129,18 @@ export function SettingsPanel({ settings, saving, onSave, onDone }: Props) {
             />
           </label>
           <label>
-            Optional system prompt
+            Reply style guide
             <textarea
               rows={4}
               value={systemPrompt}
               onChange={(event) => setSystemPrompt(event.target.value)}
-              placeholder="Leave empty to keep Cursor’s built-in agent prompt."
+              placeholder="Optional. Applied on the first message in each chat (ASD-STE100 by default)."
             />
           </label>
+          <p className="hint">
+            Cursor custom system prompts need account access. Brief prepends this guide to the
+            first user message instead, so STE still works without that flag.
+          </p>
         </fieldset>
 
         <fieldset>

@@ -303,7 +303,15 @@ app.post("/api/chats/:id/messages", async (req, res) => {
       sendSse(res, "agent", { agentId: agent.agentId });
     }
 
-    const run = await agent.send(text, {
+    const style = settings.systemPrompt?.trim() ?? "";
+    const isFirstUserTurn =
+      chat.messages.filter((message) => message.role === "user").length === 1;
+    const outbound =
+      style && isFirstUserTurn
+        ? `${style}\n\n---\nUser message:\n${text}`
+        : text;
+
+    const run = await agent.send(outbound, {
       model: { id: model },
       local: { force: true },
       onDelta: ({ update }) => {

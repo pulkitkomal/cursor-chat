@@ -2065,16 +2065,47 @@ html[data-theme="light"] .login-notices {
   .chat-top {
     flex-shrink: 0;
     padding: calc(8px + var(--safe-t)) 58px 8px 58px;
+    /* Opaque under the iOS status bar — translucent + glass blur looks foggy */
+    background: var(--bg);
   }
 
   .chat-bottom {
     flex-shrink: 0;
     padding: 8px 12px calc(10px + var(--safe-b));
+    background: var(--bg);
   }
 
   .chat-top > *,
   .chat-bottom > * {
     width: 100%;
+  }
+
+  /* WebKit PWA: backdrop-filter on chrome blurs the header text itself */
+  .chat-header.glass,
+  .composer-inner.glass,
+  .settings header.glass {
+    background: var(--panel-solid);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    box-shadow: 0 1px 0 var(--line);
+  }
+
+  .chat-header.glass::before,
+  .chat-header.glass::after,
+  .composer-inner.glass::before,
+  .composer-inner.glass::after,
+  .settings header.glass::before,
+  .settings header.glass::after {
+    content: none;
+    display: none;
+  }
+
+  .ambient {
+    opacity: 0.35;
+  }
+
+  .orb {
+    filter: none;
   }
 
   .chat-header {
@@ -2126,10 +2157,38 @@ html[data-theme="light"] .login-notices {
     position: relative;
     margin: 0;
     width: 100%;
+    max-width: 100%;
     border-radius: 0;
-    /* Clear fixed menu / new-chat FABs */
+    border-left: 0;
+    border-right: 0;
+    border-top: 0;
+    /* Clear fixed menu / new-chat FABs; fill status-bar safe area opaquely */
     padding: calc(12px + var(--safe-t)) 58px 12px 58px;
     flex-shrink: 0;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 8px 12px;
+    box-sizing: border-box;
+    background: var(--panel-solid);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .settings header > div:first-child {
+    flex: 1 1 140px;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .settings header p,
+  .settings header .subtitle {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .settings .usage-header-actions {
+    flex: 0 0 auto;
+    margin-left: auto;
   }
 
   .settings.usage-panel .usage-grid,
@@ -2137,6 +2196,8 @@ html[data-theme="light"] .login-notices {
   .settings.saved-panel .topics-scroll {
     padding-left: 12px;
     padding-right: 12px;
+    max-width: 100%;
+    box-sizing: border-box;
   }
 
   .composer-tokens {
@@ -2532,6 +2593,7 @@ html[data-theme="light"] .usage-meter-track {
 
 .topics-scroll {
   flex: 1 1 auto;
+  min-width: 0;
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
@@ -2539,10 +2601,12 @@ html[data-theme="light"] .usage-meter-track {
   overscroll-behavior: contain;
   padding: 12px 16px calc(28px + var(--safe-b));
   width: min(100%, 1040px);
+  max-width: 100%;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
   align-items: stretch;
+  box-sizing: border-box;
 }
 
 .topics-onboarding {
@@ -2663,6 +2727,8 @@ html[data-theme="light"] .usage-meter-track {
 .topics-paper {
   display: grid;
   gap: 28px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .topics-masthead {
@@ -2746,14 +2812,17 @@ html[data-theme="light"] .topic-sources span {
   gap: 16px;
   padding-bottom: 24px;
   border-bottom: 1px solid var(--line);
+  min-width: 0;
+  max-width: 100%;
 }
 
 .settings .topic-section-head {
   display: grid;
   gap: 6px;
-  max-width: 46rem;
+  max-width: min(46rem, 100%);
   align-items: start;
   justify-content: start;
+  min-width: 0;
   min-height: 0;
   padding: 0;
   border-radius: 0;
@@ -2779,6 +2848,7 @@ html[data-theme="light"] .topic-sources span {
   font-weight: 400;
   letter-spacing: -0.03em;
   line-height: 1.05;
+  overflow-wrap: anywhere;
 }
 
 .topic-date {
@@ -2799,6 +2869,8 @@ html[data-theme="light"] .topic-sources span {
   display: grid;
   gap: 16px;
   align-items: start;
+  min-width: 0;
+  max-width: 100%;
 }
 
 @media (min-width: 820px) {
@@ -2812,13 +2884,16 @@ html[data-theme="light"] .topic-sources span {
   display: grid;
   gap: 8px;
   min-width: 0;
+  max-width: 100%;
 }
 
 .topic-story-grid {
   display: grid;
   gap: 14px;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
+  min-width: 0;
+  max-width: 100%;
 }
 
 @media (min-width: 720px) {
@@ -2853,12 +2928,14 @@ html[data-theme="light"] .topic-sources span {
   font-size: 24px;
   font-weight: 400;
   letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
 }
 
 .topic-lead p,
 .topic-story p {
   margin: 0;
   line-height: 1.55;
+  overflow-wrap: anywhere;
 }
 
 .topic-lead ul {
@@ -2869,9 +2946,10 @@ html[data-theme="light"] .topic-sources span {
 
 .topic-photo {
   margin: 0;
-  width: fit-content;
+  width: 100%;
   max-width: 100%;
-  justify-self: start;
+  min-width: 0;
+  justify-self: stretch;
   display: grid;
   justify-items: center;
   border-radius: 18px;
@@ -2881,13 +2959,14 @@ html[data-theme="light"] .topic-sources span {
     radial-gradient(circle at 20% 0%, rgba(255, 255, 255, 0.05), transparent 55%),
     var(--lift);
   padding: 14px;
+  box-sizing: border-box;
 }
 
 .topic-photo img,
 .topic-story img,
 .saved-card > img {
   display: block;
-  width: auto;
+  width: 100%;
   max-width: 100%;
   height: auto;
   max-height: min(420px, 55vh);
@@ -2922,11 +3001,13 @@ html[data-theme="light"] .topic-sources span {
   align-content: start;
   gap: 8px;
   min-width: 0;
+  max-width: 100%;
   height: auto;
   padding: 12px;
   border-radius: 14px;
   border: 1px solid var(--line);
   background: rgba(255, 248, 240, 0.03);
+  box-sizing: border-box;
 }
 
 .topic-save-wrap {
@@ -2947,10 +3028,13 @@ html[data-theme="light"] .topic-sources span {
 .saved-card {
   display: grid;
   gap: 12px;
+  min-width: 0;
+  max-width: 100%;
   padding: 14px;
   border-radius: 16px;
   border: 1px solid var(--line);
   background: rgba(255, 248, 240, 0.03);
+  box-sizing: border-box;
 }
 
 html[data-theme="light"] .saved-card {
@@ -3128,5 +3212,47 @@ html[data-theme="light"] .topic-story {
   .menu,
   .usage-card {
     background: var(--panel-solid);
+  }
+}
+
+/* Home-screen / fullscreen iOS: keep chrome sharp under the status bar */
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  html,
+  body,
+  #root,
+  .app {
+    background: var(--bg);
+  }
+
+  .chat-top,
+  .chat-bottom {
+    background: var(--bg);
+  }
+
+  .chat-header.glass,
+  .composer-inner.glass,
+  .settings header.glass,
+  .settings header {
+    background: var(--panel-solid);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .chat-header.glass::before,
+  .chat-header.glass::after,
+  .composer-inner.glass::before,
+  .composer-inner.glass::after,
+  .settings header.glass::before,
+  .settings header.glass::after {
+    content: none;
+    display: none;
+  }
+
+  .ambient {
+    opacity: 0.3;
+  }
+
+  .orb {
+    filter: none;
   }
 }

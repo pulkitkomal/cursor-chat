@@ -1,5 +1,7 @@
-import { ChatIcon, CloseIcon, PlusIcon, SettingsIcon, TrashIcon } from "./Icons";
+import { ChatIcon, CloseIcon, MoonIcon, PlusIcon, SettingsIcon, SunIcon, TrashIcon } from "./Icons";
 import type { ChatSummary } from "../types";
+import type { Theme } from "../theme";
+import { IconButton } from "./ui/IconButton";
 
 function groupChats(chats: ChatSummary[]) {
   const now = new Date();
@@ -34,6 +36,8 @@ type Props = {
   onOpenSettings: () => void;
   onClose?: () => void;
   onLogout?: () => void;
+  theme: Theme;
+  onToggleTheme: () => void;
 };
 
 export function Sidebar({
@@ -47,23 +51,25 @@ export function Sidebar({
   username,
   onClose,
   onLogout,
+  theme,
+  onToggleTheme,
 }: Props) {
   const groups = groupChats(chats);
 
   return (
-    <aside className="sidebar">
+    <aside className="sidebar glass">
       <div className="brand">
         <div className="brand-copy">
-          <strong>Chats</strong>
-          <span>On this device</span>
+          <strong>Brief</strong>
+          <span>Clear local agents</span>
         </div>
-        <button type="button" className="icon-btn" aria-label="New chat" onClick={onNew}>
-          <PlusIcon width={18} height={18} />
-        </button>
+        <IconButton label="New chat" onClick={onNew}>
+          <PlusIcon width={16} height={16} />
+        </IconButton>
         {onClose ? (
-          <button type="button" className="icon-btn close-sidebar" aria-label="Close sidebar" onClick={onClose}>
-            <CloseIcon width={18} height={18} />
-          </button>
+          <IconButton label="Close sidebar" className="close-sidebar" onClick={onClose}>
+            <CloseIcon width={16} height={16} />
+          </IconButton>
         ) : null}
       </div>
       <nav className="chat-list" aria-label="Chat history">
@@ -81,17 +87,16 @@ export function Sidebar({
                       className={chat.id === activeId && !settingsOpen ? "active" : ""}
                       onClick={() => onSelect(chat.id)}
                     >
-                      <ChatIcon width={15} height={15} />
+                      <ChatIcon width={14} height={14} />
                       <span>{chat.title}</span>
                     </button>
-                    <button
-                      type="button"
-                      className="ghost danger"
-                      aria-label={`Delete ${chat.title}`}
+                    <IconButton
+                      label={`Delete ${chat.title}`}
+                      tone="danger"
                       onClick={() => onDelete(chat.id)}
                     >
                       <TrashIcon width={14} height={14} />
-                    </button>
+                    </IconButton>
                   </li>
                 ))}
               </ul>
@@ -100,17 +105,21 @@ export function Sidebar({
         )}
       </nav>
       <div className="sidebar-foot">
+        <button type="button" className="settings-link" onClick={onToggleTheme}>
+          {theme === "dark" ? <SunIcon width={15} height={15} /> : <MoonIcon width={15} height={15} />}
+          {theme === "dark" ? "Light mode" : "Dark mode"}
+        </button>
         <button
           type="button"
           className={`settings-link ${settingsOpen ? "active" : ""}`}
           onClick={onOpenSettings}
         >
-          <SettingsIcon width={18} height={18} />
+          <SettingsIcon width={15} height={15} />
           Settings
         </button>
         {onLogout ? (
           <button type="button" className="settings-link" onClick={onLogout}>
-            Sign Out
+            Sign out
           </button>
         ) : null}
         {username ? <p className="empty-list">{username}</p> : null}

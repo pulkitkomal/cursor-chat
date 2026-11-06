@@ -1,16 +1,20 @@
 import { useRef, useState } from "react";
 import { SendIcon, StopIcon } from "./Icons";
+import { IconButton } from "./ui/IconButton";
 
 type Props = {
   streaming: boolean;
   disabled: boolean;
+  totalTokens?: number;
   onSend: (text: string) => void;
   onStop: () => void;
 };
 
-export function Composer({ streaming, disabled, onSend, onStop }: Props) {
+export function Composer({ streaming, disabled, totalTokens = 0, onSend, onStop }: Props) {
   const [text, setText] = useState("");
+  const [focused, setFocused] = useState(false);
   const area = useRef<HTMLTextAreaElement>(null);
+  const showTokens = !text.trim() && !streaming && !focused && totalTokens > 0;
 
   function submit() {
     const next = text.trim();
@@ -28,14 +32,28 @@ export function Composer({ streaming, disabled, onSend, onStop }: Props) {
         submit();
       }}
     >
-      <div className="composer-inner">
+      <div className="composer-inner glass">
+        {showTokens ? (
+          <span className="composer-tokens" aria-hidden="true">
+            {totalTokens.toLocaleString()} tokens
+          </span>
+        ) : null}
         <textarea
           ref={area}
           value={text}
           disabled={disabled}
-          placeholder={disabled ? "Add an API key in Settings" : "Message"}
+          placeholder={
+            disabled
+              ? "Add an API key in Settings"
+              : showTokens
+                ? ""
+                : "Message"
+          }
+          aria-label={showTokens ? `${totalTokens.toLocaleString()} tokens used` : "Message"}
           rows={1}
           enterKeyHint="send"
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
           onChange={(event) => {
             setText(event.target.value);
             event.target.style.height = "auto";
@@ -49,18 +67,19 @@ export function Composer({ streaming, disabled, onSend, onStop }: Props) {
           }}
         />
         {streaming ? (
-          <button type="button" className="send stop" onClick={onStop} aria-label="Stop">
-            <StopIcon width={16} height={16} />
-          </button>
+          <IconButton label="Stop" className="send stop" onClick={onStop}>
+            <StopIcon width={14} height={14} />
+          </IconButton>
         ) : (
-          <button
-            type="submit"
+          <IconButton
+            label="Send"
+            tone="solid"
             className="send"
+            type="submit"
             disabled={disabled || !text.trim()}
-            aria-label="Send"
           >
-            <SendIcon width={16} height={16} />
-          </button>
+            <SendIcon width={14} height={14} />
+          </IconButton>
         )}
       </div>
     </form>

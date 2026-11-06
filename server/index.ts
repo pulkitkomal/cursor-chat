@@ -148,7 +148,7 @@ app.get("/api/models", async (_req, res) => {
     const { apiKey } = resolveApiKey(settings);
     if (!apiKey) {
       res.json({
-        models: [{ id: "composer-2.5", displayName: "Composer 2.5" }],
+        models: [{ id: "auto", displayName: "Auto" }],
       });
       return;
     }
@@ -165,8 +165,8 @@ app.get("/api/models", async (_req, res) => {
   } catch (error) {
     res.json({
       models: [
-        { id: "composer-2.5", displayName: "Composer 2.5" },
         { id: "auto", displayName: "Auto" },
+        { id: "composer-2.5", displayName: "Composer 2.5" },
       ],
       warning: error instanceof Error ? error.message : "Could not list models",
     });

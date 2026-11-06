@@ -1,22 +1,24 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AuthRequiredError, api, sendMessage } from "./api";
 import { ChatView } from "./components/ChatView";
-import { MenuIcon } from "./components/Icons";
+import { MenuIcon, PlusIcon } from "./components/Icons";
 import { Login } from "./components/Login";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { Sidebar } from "./components/Sidebar";
+import { useTheme } from "./hooks/useTheme";
 import type { Chat, ChatMessage, ChatSummary, ModelOption, Settings, StreamEvent } from "./types";
 
 export function App() {
+  const { theme, toggleTheme } = useTheme();
   const [chats, setChats] = useState<ChatSummary[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [chat, setChat] = useState<Chat | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [models, setModels] = useState<ModelOption[]>([
-    { id: "composer-2.5", displayName: "Composer 2.5" },
+    { id: "auto", displayName: "Auto" },
   ]);
-  const [model, setModel] = useState("composer-2.5");
+  const [model, setModel] = useState("auto");
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -90,7 +92,7 @@ export function App() {
       .chat(activeId)
       .then((next) => {
         setChat(next);
-        setModel(next.model || settings?.defaultModel || "composer-2.5");
+        setModel(next.model || settings?.defaultModel || "auto");
       })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : "Failed to load chat");
@@ -320,6 +322,8 @@ export function App() {
   if (needsAuth) {
     return (
       <Login
+        theme={theme}
+        onToggleTheme={toggleTheme}
         onLoggedIn={() => {
           setNeedsAuth(false);
           setBootKey((key) => key + 1);
@@ -330,13 +334,26 @@ export function App() {
 
   return (
     <div className={`app ${sidebarOpen ? "sidebar-open" : ""}`}>
+      <div className="ambient" aria-hidden="true">
+        <span className="orb orb-a" />
+        <span className="orb orb-b" />
+        <span className="orb orb-c" />
+      </div>
       <button
         type="button"
         className="menu"
         aria-label={sidebarOpen ? "Close sidebar" : "Open chats"}
         onClick={() => setSidebarOpen((open) => !open)}
       >
-        <MenuIcon width={18} height={18} />
+        <MenuIcon width={16} height={16} />
+      </button>
+      <button
+        type="button"
+        className="new-chat-fab"
+        aria-label="New chat"
+        onClick={() => void createChat()}
+      >
+        <PlusIcon width={16} height={16} />
       </button>
       {sidebarOpen ? (
         <button
@@ -360,6 +377,8 @@ export function App() {
           setSettingsOpen(true);
           setSidebarOpen(false);
         }}
+        theme={theme}
+        onToggleTheme={toggleTheme}
       />
       <main>{main}</main>
     </div>

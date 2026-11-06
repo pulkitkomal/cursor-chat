@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import type { AppSettings, ChatRecord, ChatSummary } from "./types.ts";
+import { ASD_STE100_SYSTEM_PROMPT } from "./ste100.ts";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const dataDir = path.join(root, "data");
@@ -14,7 +15,8 @@ export const defaultWorkspace =
 
 const defaultSettings = (): AppSettings => ({
   workspace: defaultWorkspace,
-  defaultModel: "composer-2.5",
+  defaultModel: "auto",
+  systemPrompt: ASD_STE100_SYSTEM_PROMPT,
   loadUserMcp: false,
   loadProjectMcp: false,
   mcpServers: [],

@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { CopyIcon, SparkIcon } from "./Icons";
+import { CopyIcon } from "./Icons";
 import { Markdown } from "./Markdown";
 import type { Chat, ChatMessage, ModelOption } from "../types";
 import { Composer } from "./Composer";
 import { ModelSelect } from "./ModelSelect";
+import { Button } from "./ui/Button";
+import { EmptyState } from "./ui/EmptyState";
 
 type Props = {
   chat: Chat | null;
@@ -66,10 +68,10 @@ function MessageView({ message, streaming }: { message: ChatMessage; streaming?:
         {waiting ? <TypingIndicator /> : null}
         {message.text && !streaming ? (
           <div className="message-meta">
-            <button type="button" className="ghost" onClick={() => void copy()}>
-              <CopyIcon width={14} height={14} />
+            <Button variant="ghost" onClick={() => void copy()}>
+              <CopyIcon width={13} height={13} />
               {copied ? "Copied" : "Copy"}
-            </button>
+            </Button>
             {message.usage ? <span>{message.usage.totalTokens.toLocaleString()} tokens</span> : null}
           </div>
         ) : null}
@@ -107,24 +109,35 @@ export function ChatView({
   const last = chat?.messages.at(-1);
   const empty = !chat || chat.messages.length === 0;
   const waitingForAssistant = streaming && (!last || last.role === "user");
+  const totalTokens =
+    chat?.messages.reduce((sum, message) => sum + (message.usage?.totalTokens ?? 0), 0) ?? 0;
 
   return (
     <section className="chat">
-      <header className="chat-header">
-        <h1>{chat?.title ?? "Messages"}</h1>
-        <ModelSelect
-          model={model}
-          models={models}
-          disabled={streaming}
-          onChange={onModelChange}
-        />
-      </header>
+      <div className="chat-top">
+        <header className="chat-header glass">
+          <h1>{chat?.title ?? "New chat"}</h1>
+          <div className="chat-header-meta">
+            {totalTokens > 0 ? (
+              <span className="token-total" title="Total tokens used in this chat">
+                {totalTokens.toLocaleString()} tokens
+              </span>
+            ) : null}
+            <ModelSelect
+              model={model}
+              models={models}
+              disabled={streaming}
+              onChange={onModelChange}
+            />
+          </div>
+        </header>
+      </div>
       <div className="transcript" ref={scroller}>
         {empty ? (
-          <div className="hero">
-            <SparkIcon width={28} height={28} />
-            <h2>Messages</h2>
-            <p>Ask anything. Your history stays on this device, and MCP tools stay attached to each chat.</p>
+          <EmptyState
+            title="Start a conversation"
+            description="History stays on this device. MCP servers stay attached to each chat."
+          >
             {!hasApiKey ? (
               <button type="button" className="banner" onClick={onOpenSettings}>
                 Add a Cursor API key in Settings to start talking.
@@ -138,7 +151,7 @@ export function ChatView({
                 ))}
               </div>
             )}
-          </div>
+          </EmptyState>
         ) : (
           <>
             {chat.messages.map((message, index) => {
@@ -162,7 +175,15 @@ export function ChatView({
         )}
         {error ? <p className="error-line">{error}</p> : null}
       </div>
-      <Composer streaming={streaming} disabled={!hasApiKey} onSend={onSend} onStop={onStop} />
+      <div className="chat-bottom">
+        <Composer
+          streaming={streaming}
+          disabled={!hasApiKey}
+          totalTokens={totalTokens}
+          onSend={onSend}
+          onStop={onStop}
+        />
+      </div>
     </section>
   );
 }

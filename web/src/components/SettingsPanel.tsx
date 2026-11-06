@@ -1,5 +1,7 @@
 import { useState } from "react";
 import type { McpServerEntry, Settings } from "../types";
+import { Button } from "./ui/Button";
+
 
 type Props = {
   settings: Settings;
@@ -64,12 +66,12 @@ export function SettingsPanel({ settings, saving, onSave, onDone }: Props) {
 
   return (
     <section className="settings">
-      <header>
+      <header className="glass">
         <h1>Settings</h1>
         {onDone ? (
-          <button type="button" className="ghost accent" onClick={onDone}>
+          <Button variant="accent" onClick={onDone}>
             Done
-          </button>
+          </Button>
         ) : (
           <p>Agents stay on this device</p>
         )}
@@ -285,9 +287,9 @@ export function SettingsPanel({ settings, saving, onSave, onDone }: Props) {
         </fieldset>
 
         <div className="row">
-          <button type="submit" className="primary" disabled={saving}>
+          <Button type="submit" variant="primary" disabled={saving}>
             {saving ? "Saving…" : "Save settings"}
-          </button>
+          </Button>
           {message ? <p className="hint">{message}</p> : null}
         </div>
       </form>

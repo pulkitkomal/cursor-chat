@@ -58,10 +58,14 @@ export function toSdkMcpServers(entries: McpServerEntry[]): Record<string, unkno
   return servers;
 }
 
-export function settingSourcesFor(settings: AppSettings): AgentRuntimeOptions["settingSources"] {
+export function settingSourcesFor(
+  settings: AppSettings,
+  overrides?: { useMemory?: boolean },
+): AgentRuntimeOptions["settingSources"] {
   const sources: AgentRuntimeOptions["settingSources"] = [];
   if (settings.loadProjectMcp) sources.push("project");
-  if (settings.loadUserMcp) sources.push("user");
+  const useMemory = overrides?.useMemory ?? settings.useMemory;
+  if (settings.loadUserMcp || useMemory) sources.push("user");
   return sources;
 }
 
@@ -118,9 +122,10 @@ export async function acquireAgent(input: {
     await disposeChatAgent(input.chatId);
   }
 
+  const modelId = input.options.model === "auto" ? "default" : input.options.model;
   const createOptions = {
     apiKey: input.options.apiKey,
-    model: { id: input.options.model },
+    model: { id: modelId },
     local: {
       cwd: input.options.workspace,
       ...(input.options.settingSources.length > 0

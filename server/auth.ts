@@ -68,8 +68,28 @@ function cookieHeader(value: string, req: Request, clear = false) {
     "SameSite=Lax",
     clear ? "Max-Age=0" : `Max-Age=${Math.floor(MAX_AGE_MS / 1000)}`,
   ];
+  if (clear) {
+    parts.push("Expires=Thu, 01 Jan 1970 00:00:00 GMT");
+  }
   if (secure) parts.push("Secure");
   return parts.join("; ");
+}
+
+/** Clear both Secure and non-Secure variants so HTTPS proxies cannot leave a stale cookie. */
+function clearSessionCookies(req: Request) {
+  const base = [
+    `${COOKIE}=`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax",
+    "Max-Age=0",
+    "Expires=Thu, 01 Jan 1970 00:00:00 GMT",
+  ];
+  const insecure = base.join("; ");
+  const secure = [...base, "Secure"].join("; ");
+  const https =
+    req.protocol === "https" || req.headers["x-forwarded-proto"] === "https";
+  return https ? [secure, insecure] : [insecure, secure];
 }
 
 export function currentUser(req: Request) {
@@ -85,7 +105,12 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
     next();
     return;
   }
-  if (req.path === "/api/health" || req.path === "/api/login" || req.path === "/api/session") {
+  if (
+    req.path === "/api/health" ||
+    req.path === "/api/login" ||
+    req.path === "/api/logout" ||
+    req.path === "/api/session"
+  ) {
     next();
     return;
   }
@@ -119,7 +144,7 @@ export function loginHandler(req: Request, res: Response) {
 }
 
 export function logoutHandler(req: Request, res: Response) {
-  res.setHeader("Set-Cookie", cookieHeader("", req, true));
+  res.setHeader("Set-Cookie", clearSessionCookies(req));
   res.json({ ok: true });
 }
 
@@ -130,7 +155,8 @@ export function sessionHandler(req: Request, res: Response) {
   }
   const user = currentUser(req);
   if (!user) {
-    res.status(401).json({ error: "Authentication required", code: "AUTH_REQUIRED", authRequired: true });
+    // 200 so the client can clear UI state without treating logout races as hard errors.
+    res.json({ ok: true, authRequired: true, username: null });
     return;
   }
   res.json({ ok: true, authRequired: true, username: user.username });

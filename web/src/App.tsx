@@ -1,12 +1,17 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AuthRequiredError, api, sendMessage } from "./api";
 import { ChatView } from "./components/ChatView";
 import { MenuIcon, PlusIcon } from "./components/Icons";
 import { Login } from "./components/Login";
+import { SavedPanel } from "./components/SavedPanel";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { Sidebar } from "./components/Sidebar";
+import { TopicsPanel } from "./components/TopicsPanel";
+import { UsagePanel } from "./components/UsagePanel";
 import { useTheme } from "./hooks/useTheme";
 import type { Chat, ChatMessage, ChatSummary, ModelOption, Settings, StreamEvent } from "./types";
+
+type Panel = "chat" | "settings" | "usage" | "topics" | "saved";
 
 export function App() {
   const { theme, toggleTheme } = useTheme();
@@ -14,18 +19,20 @@ export function App() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [chat, setChat] = useState<Chat | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [models, setModels] = useState<ModelOption[]>([
-    { id: "auto", displayName: "Auto" },
-  ]);
+  const [panel, setPanel] = useState<Panel>("chat");
+  const [models, setModels] = useState<ModelOption[]>([{ id: "auto", displayName: "Auto" }]);
   const [model, setModel] = useState("auto");
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [retryable, setRetryable] = useState(false);
+  const [lastPrompt, setLastPrompt] = useState<string | null>(null);
+  const [modelsWarning, setModelsWarning] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [needsAuth, setNeedsAuth] = useState(false);
   const [username, setUsername] = useState<string | null>(null);
   const [bootKey, setBootKey] = useState(0);
+  const abortRef = useRef<AbortController | null>(null);
 
   const refreshChats = useCallback(async () => {
     const { chats: next } = await api.chats();
@@ -53,39 +60,37 @@ export function App() {
       }
 
       try {
-        const nextSettings = await api.settings();
+        const [nextSettings, nextChats] = await Promise.all([
+          api.settings(),
+          refreshChats(),
+        ]);
         setSettings(nextSettings);
         setModel(nextSettings.defaultModel);
-      } catch (err) {
-        if (err instanceof AuthRequiredError) {
-          setNeedsAuth(true);
-          return;
-        }
-        setError(err instanceof Error ? err.message : "Failed to load settings");
-      }
-
-      try {
-        const nextChats = await refreshChats();
         if (nextChats[0]) setActiveId(nextChats[0].id);
       } catch (err) {
         if (err instanceof AuthRequiredError) {
           setNeedsAuth(true);
           return;
         }
+        setError(err instanceof Error ? err.message : "Failed to load");
       }
 
-      try {
-        const modelResult = await api.models();
-        if (modelResult.models.length > 0) setModels(modelResult.models);
-      } catch {
-        // keep the default model list
-      }
+      // Models are not needed to paint the chat list; fetch after first paint.
+      void api
+        .models()
+        .then((modelResult) => {
+          if (modelResult.models.length > 0) setModels(modelResult.models);
+          setModelsWarning(modelResult.warning ?? null);
+        })
+        .catch(() => {
+          // keep the default model list
+        });
     })();
   }, [refreshChats, bootKey]);
 
   useEffect(() => {
-    if (!activeId) {
-      setChat(null);
+    if (!activeId || panel !== "chat") {
+      if (!activeId) setChat(null);
       return;
     }
     void api
@@ -95,9 +100,13 @@ export function App() {
         setModel(next.model || settings?.defaultModel || "auto");
       })
       .catch((err: unknown) => {
+        if (err instanceof AuthRequiredError) {
+          setNeedsAuth(true);
+          return;
+        }
         setError(err instanceof Error ? err.message : "Failed to load chat");
       });
-  }, [activeId, settings?.defaultModel]);
+  }, [activeId, settings?.defaultModel, panel]);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -127,21 +136,29 @@ export function App() {
     };
   }, []);
 
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, []);
+
   async function createChat() {
     const next = await api.createChat();
     setChats((current) => [summaryOf(next), ...current.filter((item) => item.id !== next.id)]);
     setActiveId(next.id);
     setChat(next);
-    setSettingsOpen(false);
+    setPanel("chat");
     setSidebarOpen(false);
     setError(null);
+    setRetryable(false);
   }
 
   async function selectChat(id: string) {
     setActiveId(id);
-    setSettingsOpen(false);
+    setPanel("chat");
     setSidebarOpen(false);
     setError(null);
+    setRetryable(false);
   }
 
   async function removeChat(id: string) {
@@ -150,6 +167,34 @@ export function App() {
     if (activeId === id) {
       setActiveId(next[0]?.id ?? null);
       setChat(next[0] ? await api.chat(next[0].id) : null);
+    }
+  }
+
+  async function renameChat(id: string, title: string) {
+    const updated = await api.renameChat(id, title);
+    setChats((current) =>
+      current.map((item) => (item.id === id ? { ...item, title: updated.title } : item)),
+    );
+    setChat((current) => (current?.id === id ? { ...current, title: updated.title } : current));
+  }
+
+  async function toggleMemory() {
+    if (!chat) return;
+    const next = !(chat.useMemory ?? settings?.useMemory ?? false);
+    try {
+      const updated = await api.setChatMemory(chat.id, next);
+      setChat(updated);
+      setChats((current) =>
+        current.map((item) =>
+          item.id === updated.id ? { ...item, useMemory: updated.useMemory } : item,
+        ),
+      );
+    } catch (err) {
+      if (err instanceof AuthRequiredError) {
+        setNeedsAuth(true);
+        return;
+      }
+      setError(err instanceof Error ? err.message : "Failed to update memory");
     }
   }
 
@@ -224,6 +269,8 @@ export function App() {
 
   async function onSend(text: string) {
     setError(null);
+    setRetryable(false);
+    setLastPrompt(text);
     let target = chat;
     if (!target) {
       target = await api.createChat();
@@ -245,63 +292,126 @@ export function App() {
     };
     setChat(optimistic);
     setStreaming(true);
+    setPanel("chat");
+
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
 
     try {
-      await sendMessage(target.id, text, model, (event) => {
-        if (event.event === "error") setError(event.data.message);
-        setChat((current) => (current ? applyEvent(event, current) : current));
-        if (event.event === "title") {
-          setChats((current) =>
-            current.map((item) =>
-              item.id === target!.id ? { ...item, title: event.data.title } : item,
-            ),
-          );
-        }
-      });
+      await sendMessage(
+        target.id,
+        text,
+        model,
+        (event) => {
+          if (event.event === "error") {
+            setError(event.data.message);
+            setRetryable(Boolean(event.data.retryable));
+          }
+          setChat((current) => (current ? applyEvent(event, current) : current));
+          if (event.event === "title") {
+            setChats((current) =>
+              current.map((item) =>
+                item.id === target!.id ? { ...item, title: event.data.title } : item,
+              ),
+            );
+          }
+        },
+        controller.signal,
+      );
       await refreshChats();
     } catch (err) {
+      if (err instanceof AuthRequiredError) {
+        setNeedsAuth(true);
+        return;
+      }
+      if ((err as Error)?.name === "AbortError") return;
       setError(err instanceof Error ? err.message : "Send failed");
+      setRetryable(true);
     } finally {
       setStreaming(false);
+      if (abortRef.current === controller) abortRef.current = null;
     }
   }
 
   async function onStop() {
+    abortRef.current?.abort();
     if (!chat) return;
     await api.cancel(chat.id);
   }
 
-  async function onSaveSettings(next: Partial<Settings> & { apiKey?: string | null }) {
+  async function onSaveSettings(
+    next: Partial<Settings> & { apiKey?: string | null; sessionToken?: string | null },
+  ) {
     setSaving(true);
+    setError(null);
     try {
       const saved = await api.saveSettings(next);
       setSettings(saved);
       if (saved.defaultModel) setModel(saved.defaultModel);
+    } catch (err) {
+      if (err instanceof AuthRequiredError) {
+        setNeedsAuth(true);
+        return;
+      }
+      setError(err instanceof Error ? err.message : "Failed to save settings");
+      throw err;
     } finally {
       setSaving(false);
     }
   }
 
   async function onLogout() {
-    await api.logout();
-    setNeedsAuth(true);
-    setUsername(null);
-    setSettings(null);
-    setChat(null);
-    setChats([]);
+    abortRef.current?.abort();
+    abortRef.current = null;
+    try {
+      await api.logout();
+    } catch {
+      // Cookie may already be gone; still clear local session UI.
+    } finally {
+      setNeedsAuth(true);
+      setUsername(null);
+      setSettings(null);
+      setChat(null);
+      setChats([]);
+      setActiveId(null);
+      setPanel("chat");
+      setError(null);
+      setStreaming(false);
+    }
   }
 
   const hasApiKey = settings?.hasApiKey ?? false;
   const main = useMemo(() => {
-    if (settingsOpen && settings) {
+    if (panel === "settings" && settings) {
       return (
         <SettingsPanel
           settings={settings}
           saving={saving}
           onSave={onSaveSettings}
-          onDone={() => setSettingsOpen(false)}
+          onDone={() => setPanel("chat")}
         />
       );
+    }
+    if (panel === "usage") {
+      return (
+        <UsagePanel
+          onDone={() => setPanel("chat")}
+          onOpenSettings={() => setPanel("settings")}
+        />
+      );
+    }
+    if (panel === "topics") {
+      return (
+        <TopicsPanel
+          hasApiKey={hasApiKey}
+          onDone={() => setPanel("chat")}
+          onOpenSettings={() => setPanel("settings")}
+        />
+      );
+    }
+    if (panel === "saved") {
+      return <SavedPanel onDone={() => setPanel("chat")} />;
     }
     return (
       <ChatView
@@ -310,14 +420,34 @@ export function App() {
         model={model}
         streaming={streaming}
         error={error}
+        retryable={retryable}
+        modelsWarning={modelsWarning}
         hasApiKey={hasApiKey}
+        useMemory={chat?.useMemory ?? settings?.useMemory ?? false}
         onModelChange={setModel}
+        onToggleMemory={() => void toggleMemory()}
         onSend={(text) => void onSend(text)}
         onStop={() => void onStop()}
-        onOpenSettings={() => setSettingsOpen(true)}
+        onRetry={() => {
+          if (lastPrompt) void onSend(lastPrompt);
+        }}
+        onOpenSettings={() => setPanel("settings")}
       />
     );
-  }, [settingsOpen, settings, saving, chat, models, model, streaming, error, hasApiKey]);
+  }, [
+    panel,
+    settings,
+    saving,
+    chat,
+    models,
+    model,
+    streaming,
+    error,
+    retryable,
+    modelsWarning,
+    hasApiKey,
+    lastPrompt,
+  ]);
 
   if (needsAuth) {
     return (
@@ -366,21 +496,34 @@ export function App() {
       <Sidebar
         chats={chats}
         activeId={activeId}
-        settingsOpen={settingsOpen}
+        panel={panel}
         onNew={() => void createChat()}
         onSelect={(id) => void selectChat(id)}
         onDelete={(id) => void removeChat(id)}
+        onRename={(id, title) => void renameChat(id, title)}
         username={username}
         onClose={() => setSidebarOpen(false)}
         onLogout={username ? () => void onLogout() : undefined}
         onOpenSettings={() => {
-          setSettingsOpen(true);
+          setPanel("settings");
+          setSidebarOpen(false);
+        }}
+        onOpenUsage={() => {
+          setPanel("usage");
+          setSidebarOpen(false);
+        }}
+        onOpenTopics={() => {
+          setPanel("topics");
+          setSidebarOpen(false);
+        }}
+        onOpenSaved={() => {
+          setPanel("saved");
           setSidebarOpen(false);
         }}
         theme={theme}
         onToggleTheme={toggleTheme}
       />
-      <main>{main}</main>
+      <main className="panel-swap">{main}</main>
     </div>
   );
 }

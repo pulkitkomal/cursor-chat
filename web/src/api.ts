@@ -1,9 +1,14 @@
 import type {
   Chat,
   ChatSummary,
+  McpServerEntry,
   ModelOption,
+  SavedStory,
   Settings,
   StreamEvent,
+  TopicStory,
+  TopicsState,
+  UsageStats,
 } from "./types";
 
 export class AuthRequiredError extends Error {
@@ -48,7 +53,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ username, password }),
     }),
-  logout: () => request<{ ok: boolean }>("/api/logout", { method: "POST" }),
+  logout: () =>
+    request<{ ok: boolean }>("/api/logout", {
+      method: "POST",
+      body: "{}",
+    }),
   health: () =>
     request<{
       ok: boolean;
@@ -57,14 +66,41 @@ export const api = {
       authRequired?: boolean;
     }>("/api/health"),
   settings: () => request<Settings>("/api/settings"),
-  saveSettings: (body: Partial<Settings> & { apiKey?: string | null }) =>
-    request<Settings>("/api/settings", { method: "PUT", body: JSON.stringify(body) }),
+  saveSettings: (
+    body: Partial<Settings> & { apiKey?: string | null; sessionToken?: string | null },
+  ) => request<Settings>("/api/settings", { method: "PUT", body: JSON.stringify(body) }),
   models: () => request<{ models: ModelOption[]; warning?: string }>("/api/models"),
+  usage: () => request<UsageStats>("/api/usage"),
+  topics: () => request<TopicsState>("/api/topics"),
+  saveTopicInterests: (interests: string[]) =>
+    request<TopicsState>("/api/topics/interests", {
+      method: "PUT",
+      body: JSON.stringify({ interests }),
+    }),
+  refreshTopics: (interests?: string[]) =>
+    request<TopicsState>("/api/topics/refresh", {
+      method: "POST",
+      body: JSON.stringify(interests ? { interests } : {}),
+    }),
+  saved: () => request<{ items: SavedStory[] }>("/api/saved"),
+  saveStory: (story: TopicStory & { topic: string }) =>
+    request<{ item: SavedStory; created: boolean }>("/api/saved", {
+      method: "POST",
+      body: JSON.stringify(story),
+    }),
+  unsaveStory: (id: string) => request<void>(`/api/saved/${id}`, { method: "DELETE" }),
+  testMcp: (server: McpServerEntry) =>
+    request<{ ok: boolean; status?: number; message?: string; error?: string }>(
+      "/api/mcp/test",
+      { method: "POST", body: JSON.stringify(server) },
+    ),
   chats: () => request<{ chats: ChatSummary[] }>("/api/chats"),
   createChat: () => request<Chat>("/api/chats", { method: "POST" }),
   chat: (id: string) => request<Chat>(`/api/chats/${id}`),
   renameChat: (id: string, title: string) =>
     request<Chat>(`/api/chats/${id}`, { method: "PATCH", body: JSON.stringify({ title }) }),
+  setChatMemory: (id: string, useMemory: boolean) =>
+    request<Chat>(`/api/chats/${id}`, { method: "PATCH", body: JSON.stringify({ useMemory }) }),
   deleteChat: (id: string) => request<void>(`/api/chats/${id}`, { method: "DELETE" }),
   cancel: (id: string) =>
     request<{ ok: boolean }>(`/api/chats/${id}/cancel`, { method: "POST" }),

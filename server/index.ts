@@ -27,7 +27,7 @@ import {
   writeChat,
   writeSettings,
 } from "./store.ts";
-import type { AppSettings, ChatMessage, ToolCallRecord } from "./types.ts";
+import type { AppSettings, ChatMessage, McpServerEntry, ToolCallRecord } from "./types.ts";
 import {
   authEnabled,
   loginHandler,
@@ -35,6 +35,20 @@ import {
   requireAuth,
   sessionHandler,
 } from "./auth.ts";
+import { collectUsageStats } from "./usage.ts";
+import {
+  addTokenUsage,
+  normalizeInterests,
+  readTopicsState,
+  refreshTopicsEdition,
+  writeTopicsState,
+} from "./topics.ts";
+import {
+  deleteSavedStory,
+  normalizeSavedInput,
+  readSavedStories,
+  saveStory,
+} from "./saved.ts";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const port = Number(process.env.PORT ?? 3847);
@@ -53,7 +67,11 @@ function sendSse(res: express.Response, event: string, data: unknown) {
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
 
-async function runtimeFromSettings(settings: AppSettings, model: string) {
+async function runtimeFromSettings(
+  settings: AppSettings,
+  model: string,
+  overrides?: { useMemory?: boolean },
+) {
   const { apiKey, source } = resolveApiKey(settings);
   if (!apiKey) {
     const error = new Error(
@@ -72,7 +90,7 @@ async function runtimeFromSettings(settings: AppSettings, model: string) {
       model,
       systemPrompt: settings.systemPrompt,
       mcpServers: toSdkMcpServers(settings.mcpServers),
-      settingSources: settingSourcesFor(settings),
+      settingSources: settingSourcesFor(settings, overrides),
     },
   };
 }
@@ -92,15 +110,24 @@ app.get("/api/session", sessionHandler);
 app.post("/api/login", loginHandler);
 app.post("/api/logout", logoutHandler);
 
-app.get("/api/settings", async (_req, res) => {
-  const settings = await readSettings();
+function publicSettings(settings: AppSettings) {
   const { source } = resolveApiKey(settings);
-  const { apiKey: _apiKey, ...rest } = settings;
-  res.json({
+  const { apiKey: _apiKey, sessionToken: _sessionToken, ...rest } = settings;
+  return {
     ...rest,
     hasApiKey: source !== "none",
     apiKeySource: source,
-  });
+    hasSessionToken: Boolean(
+      settings.sessionToken?.trim() ||
+        process.env.CURSOR_SESSION_TOKEN?.trim() ||
+        process.env.CURSOR_SESSION_COOKIE?.trim(),
+    ),
+  };
+}
+
+app.get("/api/settings", async (_req, res) => {
+  const settings = await readSettings();
+  res.json(publicSettings(settings));
 });
 
 app.put("/api/settings", async (req, res) => {
@@ -124,6 +151,7 @@ app.put("/api/settings", async (req, res) => {
       typeof body.loadProjectMcp === "boolean"
         ? body.loadProjectMcp
         : current.loadProjectMcp,
+    useMemory: typeof body.useMemory === "boolean" ? body.useMemory : current.useMemory,
     mcpServers: Array.isArray(body.mcpServers) ? body.mcpServers : current.mcpServers,
   };
   if (body.apiKey === null || body.apiKey === "") {
@@ -131,15 +159,194 @@ app.put("/api/settings", async (req, res) => {
   } else if (typeof body.apiKey === "string" && body.apiKey.trim()) {
     next.apiKey = body.apiKey.trim();
   }
+  if (body.sessionToken === null || body.sessionToken === "") {
+    delete next.sessionToken;
+  } else if (typeof body.sessionToken === "string" && body.sessionToken.trim()) {
+    next.sessionToken = body.sessionToken.trim();
+  }
   await writeSettings(next);
   await disposeAllAgents();
-  const { source } = resolveApiKey(next);
-  const { apiKey: _apiKey, ...rest } = next;
-  res.json({
-    ...rest,
-    hasApiKey: source !== "none",
-    apiKeySource: source,
-  });
+  res.json(publicSettings(next));
+});
+
+app.get("/api/usage", async (_req, res) => {
+  try {
+    const settings = await readSettings();
+    res.json(await collectUsageStats(settings));
+  } catch (error) {
+    res.status(500).json({
+      error: error instanceof Error ? error.message : "Failed to load usage",
+    });
+  }
+});
+
+app.post("/api/mcp/test", async (req, res) => {
+  const entry = req.body as McpServerEntry;
+  if (!entry?.name?.trim()) {
+    res.status(400).json({ ok: false, error: "Server name is required" });
+    return;
+  }
+  try {
+    if (entry.type === "http") {
+      if (!entry.url?.trim()) {
+        res.status(400).json({ ok: false, error: "URL is required" });
+        return;
+      }
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
+      const response = await fetch(entry.url, {
+        method: "GET",
+        headers: entry.headers,
+        signal: controller.signal,
+      }).finally(() => clearTimeout(timer));
+      res.json({
+        ok: response.ok || response.status === 405 || response.status === 406,
+        status: response.status,
+        message: response.ok
+          ? `Reached ${entry.url}`
+          : `HTTP ${response.status} from ${entry.url}`,
+      });
+      return;
+    }
+    if (!entry.command?.trim()) {
+      res.status(400).json({ ok: false, error: "Command is required" });
+      return;
+    }
+    const { spawn } = await import("node:child_process");
+    const result = await new Promise<{ ok: boolean; message: string }>((resolve) => {
+      let settled = false;
+      const finish = (value: { ok: boolean; message: string }) => {
+        if (settled) return;
+        settled = true;
+        resolve(value);
+      };
+      const child = spawn(entry.command, entry.args ?? [], {
+        env: { ...process.env, ...(entry.env ?? {}) },
+        cwd: entry.cwd || undefined,
+        stdio: "ignore",
+      });
+      const timer = setTimeout(() => {
+        child.kill("SIGTERM");
+        finish({ ok: true, message: `Started ${entry.command} (timed probe)` });
+      }, 1500);
+      child.on("error", (error) => {
+        clearTimeout(timer);
+        finish({ ok: false, message: error.message });
+      });
+      child.on("exit", (code) => {
+        clearTimeout(timer);
+        if (code === 0 || code === null) {
+          finish({ ok: true, message: `Command ${entry.command} exited cleanly` });
+        } else {
+          finish({ ok: false, message: `Command exited with code ${code}` });
+        }
+      });
+    });
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({
+      ok: false,
+      error: error instanceof Error ? error.message : "MCP test failed",
+    });
+  }
+});
+
+app.get("/api/topics", async (_req, res) => {
+  res.json(await readTopicsState());
+});
+
+app.put("/api/topics/interests", async (req, res) => {
+  const interests = normalizeInterests(req.body?.interests);
+  const current = await readTopicsState();
+  const edition =
+    interests.length === 0 || !current.edition
+      ? null
+      : {
+          ...current.edition,
+          sections: current.edition.sections.filter((section) =>
+            interests.some((topic) => topic.toLowerCase() === section.topic.toLowerCase()),
+          ),
+        };
+  const next = {
+    interests,
+    edition: edition && edition.sections.length > 0 ? edition : null,
+    lifetimeUsage: current.lifetimeUsage,
+    refreshCount: current.refreshCount ?? 0,
+  };
+  await writeTopicsState(next);
+  res.json(next);
+});
+
+app.post("/api/topics/refresh", async (req, res) => {
+  try {
+    const settings = await readSettings();
+    const { apiKey } = resolveApiKey(settings);
+    if (!apiKey) {
+      res.status(401).json({
+        error: "Missing Cursor API key. Add one in Settings or set CURSOR_API_KEY.",
+      });
+      return;
+    }
+    await mkdir(settings.workspace, { recursive: true });
+    const current = await readTopicsState();
+    const bodyInterests = normalizeInterests(req.body?.interests);
+    const interests = bodyInterests.length > 0 ? bodyInterests : current.interests;
+    if (interests.length === 0) {
+      res.status(400).json({ error: "Add at least one topic before refreshing." });
+      return;
+    }
+    const edition = await refreshTopicsEdition({
+      interests,
+      apiKey,
+      workspace: settings.workspace,
+      model: settings.defaultModel,
+    });
+    const next = {
+      interests,
+      edition,
+      lifetimeUsage: addTokenUsage(
+        current.lifetimeUsage ?? {
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          totalTokens: 0,
+          reasoningTokens: 0,
+        },
+        edition.usage,
+      ),
+      refreshCount: (current.refreshCount ?? 0) + 1,
+    };
+    await writeTopicsState(next);
+    res.json(next);
+  } catch (error) {
+    res.status(500).json({
+      error: error instanceof Error ? error.message : "Failed to refresh topics",
+    });
+  }
+});
+
+app.get("/api/saved", async (_req, res) => {
+  res.json({ items: await readSavedStories() });
+});
+
+app.post("/api/saved", async (req, res) => {
+  const input = normalizeSavedInput(req.body);
+  if (!input) {
+    res.status(400).json({ error: "topic, title, and summary are required" });
+    return;
+  }
+  const { item, created } = await saveStory(input);
+  res.status(created ? 201 : 200).json({ item, created });
+});
+
+app.delete("/api/saved/:id", async (req, res) => {
+  const removed = await deleteSavedStory(req.params.id);
+  if (!removed) {
+    res.status(404).json({ error: "Saved story not found" });
+    return;
+  }
+  res.status(204).end();
 });
 
 app.get("/api/models", async (_req, res) => {
@@ -153,14 +360,19 @@ app.get("/api/models", async (_req, res) => {
       return;
     }
     const models = await Cursor.models.list({ apiKey });
+    const mapped = models.map((model) => {
+      const id = model.id === "default" ? "auto" : model.id;
+      const displayName =
+        "displayName" in model && typeof model.displayName === "string"
+          ? model.displayName
+          : id === "auto"
+            ? "Auto"
+            : model.id;
+      return { id, displayName };
+    });
+    const hasAuto = mapped.some((model) => model.id === "auto");
     res.json({
-      models: models.map((model) => ({
-        id: model.id,
-        displayName:
-          "displayName" in model && typeof model.displayName === "string"
-            ? model.displayName
-            : model.id,
-      })),
+      models: hasAuto ? mapped : [{ id: "auto", displayName: "Auto" }, ...mapped],
     });
   } catch (error) {
     res.json({
@@ -179,7 +391,7 @@ app.get("/api/chats", async (_req, res) => {
 
 app.post("/api/chats", async (_req, res) => {
   const settings = await readSettings();
-  const chat = await createChat(settings.defaultModel);
+  const chat = await createChat(settings.defaultModel, { useMemory: settings.useMemory });
   res.status(201).json(chat);
 });
 
@@ -198,8 +410,17 @@ app.patch("/api/chats/:id", async (req, res) => {
     res.status(404).json({ error: "Chat not found" });
     return;
   }
+  let changed = false;
   if (typeof req.body?.title === "string" && req.body.title.trim()) {
     chat.title = req.body.title.trim();
+    changed = true;
+  }
+  if (typeof req.body?.useMemory === "boolean") {
+    chat.useMemory = req.body.useMemory;
+    changed = true;
+    await disposeChatAgent(chat.id);
+  }
+  if (changed) {
     chat.updatedAt = Date.now();
     await writeChat(chat);
   }
@@ -286,12 +507,18 @@ app.post("/api/chats/:id/messages", async (req, res) => {
   if (chat.title !== "New chat") sendSse(res, "title", { title: chat.title });
 
   let closed = false;
+  let activeCancel: (() => Promise<void>) | null = null;
   req.on("close", () => {
     closed = true;
+    if (activeCancel) {
+      void activeCancel().catch(() => undefined);
+    }
   });
 
   try {
-    const runtime = await runtimeFromSettings(settings, model);
+    const runtime = await runtimeFromSettings(settings, model, {
+      useMemory: chat.useMemory ?? settings.useMemory,
+    });
     const agent = await acquireAgent({
       chatId: chat.id,
       agentId: chat.agentId,
@@ -300,7 +527,13 @@ app.post("/api/chats/:id/messages", async (req, res) => {
     if (!chat.agentId) {
       chat.agentId = agent.agentId;
       await writeChat(chat);
-      sendSse(res, "agent", { agentId: agent.agentId });
+      if (!closed) sendSse(res, "agent", { agentId: agent.agentId });
+    }
+
+    if (closed) {
+      activeRuns.delete(chat.id);
+      res.end();
+      return;
     }
 
     const style = settings.systemPrompt?.trim() ?? "";
@@ -312,7 +545,7 @@ app.post("/api/chats/:id/messages", async (req, res) => {
         : text;
 
     const run = await agent.send(outbound, {
-      model: { id: model },
+      model: { id: model === "auto" ? "default" : model },
       local: { force: true },
       onDelta: ({ update }) => {
         if (closed) return;
@@ -344,12 +577,13 @@ app.post("/api/chats/:id/messages", async (req, res) => {
       },
     });
 
+    activeCancel = async () => {
+      if (run.supports("cancel")) await run.cancel();
+    };
     activeRuns.set(chat.id, {
       chatId: chat.id,
       runId: run.id,
-      cancel: async () => {
-        if (run.supports("cancel")) await run.cancel();
-      },
+      cancel: activeCancel,
     });
 
     if (!closed) {
@@ -364,18 +598,20 @@ app.post("/api/chats/:id/messages", async (req, res) => {
     if (result.status === "error") {
       const message = result.error?.message ?? "The run failed.";
       if (!assistantMessage.text) assistantMessage.text = message;
-      sendSse(res, "error", { message });
+      if (!closed) sendSse(res, "error", { message });
     }
 
     chat.messages.push(assistantMessage);
     chat.updatedAt = Date.now();
     await writeChat(chat);
 
-    sendSse(res, "done", {
-      status: result.status,
-      usage: assistantMessage.usage,
-      message: assistantMessage,
-    });
+    if (!closed) {
+      sendSse(res, "done", {
+        status: result.status,
+        usage: assistantMessage.usage,
+        message: assistantMessage,
+      });
+    }
   } catch (error) {
     const message =
       error instanceof CursorAgentError
@@ -387,14 +623,16 @@ app.post("/api/chats/:id/messages", async (req, res) => {
     chat.messages.push(assistantMessage);
     chat.updatedAt = Date.now();
     await writeChat(chat);
-    sendSse(res, "error", {
-      message,
-      retryable: error instanceof CursorAgentError ? error.isRetryable : false,
-    });
-    sendSse(res, "done", { status: "error", message: assistantMessage });
+    if (!closed) {
+      sendSse(res, "error", {
+        message,
+        retryable: error instanceof CursorAgentError ? error.isRetryable : false,
+      });
+      sendSse(res, "done", { status: "error", message: assistantMessage });
+    }
   } finally {
     activeRuns.delete(chat.id);
-    res.end();
+    if (!closed) res.end();
   }
 });
 

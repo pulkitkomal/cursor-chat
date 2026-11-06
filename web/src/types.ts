@@ -22,11 +22,13 @@ export type Settings = {
   workspace: string;
   defaultModel: string;
   systemPrompt?: string;
+  useMemory: boolean;
   loadUserMcp: boolean;
   loadProjectMcp: boolean;
   mcpServers: McpServerEntry[];
   hasApiKey: boolean;
   apiKeySource: "settings" | "env" | "none";
+  hasSessionToken?: boolean;
 };
 
 export type TokenUsage = {
@@ -61,8 +63,27 @@ export type ChatSummary = {
   title: string;
   agentId?: string;
   model: string;
+  useMemory?: boolean;
   createdAt: number;
   updatedAt: number;
+};
+
+export type TopicSource = {
+  title: string;
+  url?: string;
+  publisher?: string;
+};
+
+export type SavedStory = {
+  id: string;
+  savedAt: number;
+  topic: string;
+  title: string;
+  summary: string;
+  bullets?: string[];
+  sources?: TopicSource[];
+  sourceHints?: string[];
+  image?: { url: string; alt: string; credit?: string };
 };
 
 export type Chat = ChatSummary & {
@@ -85,3 +106,106 @@ export type StreamEvent =
   | { event: "tool"; data: ToolCallRecord }
   | { event: "error"; data: { message: string; retryable?: boolean } }
   | { event: "done"; data: { status: string; usage?: TokenUsage; message?: ChatMessage } };
+
+export type TopicFigure =
+  | {
+      kind: "stat";
+      title: string;
+      value: string;
+      unit?: string;
+      hint?: string;
+    }
+  | {
+      kind: "bar" | "line";
+      title: string;
+      series: { label: string; value: number }[];
+      unit?: string;
+    };
+
+export type TopicStory = {
+  title: string;
+  summary: string;
+  publishedAt?: string;
+  bullets?: string[];
+  sources?: TopicSource[];
+  sourceHints?: string[];
+  image?: { url: string; alt: string; credit?: string };
+};
+
+export type TopicSection = {
+  topic: string;
+  headline: string;
+  dek: string;
+  stories: TopicStory[];
+  figures: TopicFigure[];
+  error?: string;
+};
+
+export type TopicsEdition = {
+  fetchedAt: number;
+  sections: TopicSection[];
+  usage?: TokenUsage;
+};
+
+export type TopicsState = {
+  interests: string[];
+  edition: TopicsEdition | null;
+  lifetimeUsage?: TokenUsage;
+  refreshCount?: number;
+};
+
+export type UsageStats = {
+  fetchedAt: number;
+  account: {
+    apiKeyName?: string;
+    userId?: number;
+    userEmail?: string;
+    userFirstName?: string;
+    userLastName?: string;
+    createdAt?: string;
+  } | null;
+  accountError?: string;
+  local: TokenUsage & { messages: number; chats: number };
+  topics: TokenUsage & {
+    refreshes: number;
+    lastEditionTokens: number;
+    lastFetchedAt?: number;
+    stories: number;
+  };
+  agents: {
+    agentId: string;
+    chatId: string;
+    title: string;
+    usage?: TokenUsage;
+    costCents?: number;
+    error?: string;
+  }[];
+  quota: {
+    billingCycleStart?: string;
+    billingCycleEnd?: string;
+    membershipType?: string;
+    limitType?: string;
+    isUnlimited?: boolean;
+    autoModelSelectedDisplayMessage?: string;
+    namedModelSelectedDisplayMessage?: string;
+    individualUsage?: {
+      plan?: {
+        enabled?: boolean;
+        used?: number;
+        limit?: number | null;
+        remaining?: number | null;
+        autoPercentUsed?: number;
+        apiPercentUsed?: number;
+        totalPercentUsed?: number;
+      };
+      onDemand?: {
+        enabled?: boolean;
+        used?: number;
+        limit?: number | null;
+        remaining?: number | null;
+      };
+    };
+    source: "dashboard" | "unavailable";
+    warning?: string;
+  };
+};

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { api } from "../api";
 import type { McpServerEntry, Settings } from "../types";
 import { Button } from "./ui/Button";
 
@@ -6,7 +7,9 @@ import { Button } from "./ui/Button";
 type Props = {
   settings: Settings;
   saving: boolean;
-  onSave: (next: Partial<Settings> & { apiKey?: string | null }) => Promise<void>;
+  onSave: (
+    next: Partial<Settings> & { apiKey?: string | null; sessionToken?: string | null },
+  ) => Promise<void>;
   onDone?: () => void;
 };
 
@@ -35,12 +38,16 @@ export function SettingsPanel({ settings, saving, onSave, onDone }: Props) {
   const [workspace, setWorkspace] = useState(settings.workspace);
   const [defaultModel, setDefaultModel] = useState(settings.defaultModel);
   const [systemPrompt, setSystemPrompt] = useState(settings.systemPrompt ?? "");
+  const [useMemory, setUseMemory] = useState(settings.useMemory ?? false);
   const [loadUserMcp, setLoadUserMcp] = useState(settings.loadUserMcp);
   const [loadProjectMcp, setLoadProjectMcp] = useState(settings.loadProjectMcp);
   const [apiKey, setApiKey] = useState("");
   const [clearKey, setClearKey] = useState(false);
+  const [sessionToken, setSessionToken] = useState("");
+  const [clearSession, setClearSession] = useState(false);
   const [servers, setServers] = useState<McpServerEntry[]>(settings.mcpServers);
   const [message, setMessage] = useState<string | null>(null);
+  const [mcpTest, setMcpTest] = useState<Record<number, string>>({});
 
   function updateServer(index: number, next: McpServerEntry) {
     setServers((current) => current.map((server, i) => (i === index ? next : server)));
@@ -48,20 +55,47 @@ export function SettingsPanel({ settings, saving, onSave, onDone }: Props) {
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    const payload: Partial<Settings> & { apiKey?: string | null } = {
+    const payload: Partial<Settings> & { apiKey?: string | null; sessionToken?: string | null } = {
       workspace,
       defaultModel,
       systemPrompt,
+      useMemory,
       loadUserMcp,
       loadProjectMcp,
       mcpServers: servers.filter((server) => server.name.trim()),
     };
     if (clearKey) payload.apiKey = null;
     else if (apiKey.trim()) payload.apiKey = apiKey.trim();
-    await onSave(payload);
-    setApiKey("");
-    setClearKey(false);
-    setMessage("Saved. The next message will use these MCP servers.");
+    if (clearSession) payload.sessionToken = null;
+    else if (sessionToken.trim()) payload.sessionToken = sessionToken.trim();
+    try {
+      await onSave(payload);
+      setApiKey("");
+      setClearKey(false);
+      setSessionToken("");
+      setClearSession(false);
+      setMessage("Saved. The next message will use these MCP servers.");
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Save failed");
+    }
+  }
+
+  async function testServer(index: number, server: McpServerEntry) {
+    setMcpTest((current) => ({ ...current, [index]: "Testing…" }));
+    try {
+      const result = await api.testMcp(server);
+      setMcpTest((current) => ({
+        ...current,
+        [index]: result.ok
+          ? result.message || "OK"
+          : result.error || result.message || "Failed",
+      }));
+    } catch (err) {
+      setMcpTest((current) => ({
+        ...current,
+        [index]: err instanceof Error ? err.message : "Test failed",
+      }));
+    }
   }
 
   return (
@@ -113,6 +147,37 @@ export function SettingsPanel({ settings, saving, onSave, onDone }: Props) {
               ) : null}
             </>
           )}
+          <label>
+            Session token (optional, for Usage quota)
+            <input
+              type="password"
+              autoComplete="off"
+              placeholder={
+                settings.hasSessionToken
+                  ? "••••••••  leave blank to keep"
+                  : "WorkosCursorSessionToken from cursor.com"
+              }
+              value={sessionToken}
+              onChange={(event) => {
+                setSessionToken(event.target.value);
+                setClearSession(false);
+              }}
+            />
+          </label>
+          <p className="hint">
+            Used only for dashboard quota on the Usage tab. Prefer{" "}
+            <code>CURSOR_SESSION_TOKEN</code> in <code>.env</code> on the server.
+          </p>
+          {settings.hasSessionToken ? (
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={clearSession}
+                onChange={(event) => setClearSession(event.target.checked)}
+              />
+              Remove saved session token
+            </label>
+          ) : null}
         </fieldset>
 
         <fieldset>
@@ -144,7 +209,18 @@ export function SettingsPanel({ settings, saving, onSave, onDone }: Props) {
         </fieldset>
 
         <fieldset>
-          <legend>MCP sources</legend>
+          <legend>Memory & MCP sources</legend>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={useMemory}
+              onChange={(event) => setUseMemory(event.target.checked)}
+            />
+            <span>
+              Default Memory on for new chats (Cursor user memories / rules via{" "}
+              <code>settingSources: user</code>)
+            </span>
+          </label>
           <label className="check">
             <input
               type="checkbox"
@@ -203,12 +279,20 @@ export function SettingsPanel({ settings, saving, onSave, onDone }: Props) {
                 </select>
                 <button
                   type="button"
+                  className="ghost"
+                  onClick={() => void testServer(index, server)}
+                >
+                  Test
+                </button>
+                <button
+                  type="button"
                   className="ghost danger"
                   onClick={() => setServers((current) => current.filter((_, i) => i !== index))}
                 >
                   Remove
                 </button>
               </div>
+              {mcpTest[index] ? <p className="hint">{mcpTest[index]}</p> : null}
               <label>
                 Name
                 <input

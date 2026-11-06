@@ -32,7 +32,7 @@ export function Composer({ streaming, disabled, totalTokens = 0, onSend, onStop 
         submit();
       }}
     >
-      <div className="composer-inner glass">
+      <div className={`composer-inner glass ${focused || text.trim() ? "focused" : ""}`}>
         {showTokens ? (
           <span className="composer-tokens" aria-hidden="true">
             {totalTokens.toLocaleString()} tokens
@@ -47,7 +47,7 @@ export function Composer({ streaming, disabled, totalTokens = 0, onSend, onStop 
               ? "Add an API key in Settings"
               : showTokens
                 ? ""
-                : "Message"
+                : "Message Brief"
           }
           aria-label={showTokens ? `${totalTokens.toLocaleString()} tokens used` : "Message"}
           rows={1}

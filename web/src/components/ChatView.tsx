@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { CopyIcon } from "./Icons";
+import { CopyIcon, MemoryIcon } from "./Icons";
 import { Markdown } from "./Markdown";
 import type { Chat, ChatMessage, ModelOption } from "../types";
 import { Composer } from "./Composer";
@@ -13,10 +13,15 @@ type Props = {
   model: string;
   streaming: boolean;
   error?: string | null;
+  retryable?: boolean;
+  modelsWarning?: string | null;
   hasApiKey: boolean;
+  useMemory: boolean;
   onModelChange: (model: string) => void;
+  onToggleMemory: () => void;
   onSend: (text: string) => void;
   onStop: () => void;
+  onRetry?: () => void;
   onOpenSettings: () => void;
 };
 
@@ -52,10 +57,20 @@ function MessageView({ message, streaming }: { message: ChatMessage; streaming?:
         {message.tools && message.tools.length > 0 ? (
           <ul className="tools">
             {message.tools.map((tool) => (
-              <li key={tool.callId} className={tool.status}>
-                <span className="dot" />
-                <code>{tool.name}</code>
-                <em>{tool.status}</em>
+              <li key={tool.callId} className={`tool-chip ${tool.status}`}>
+                <details>
+                  <summary>
+                    <span className="dot" />
+                    <code>{tool.name}</code>
+                    <em>{tool.status}</em>
+                  </summary>
+                  {tool.args != null ? (
+                    <pre>{safeJson(tool.args)}</pre>
+                  ) : null}
+                  {tool.result != null ? (
+                    <pre>{safeJson(tool.result)}</pre>
+                  ) : null}
+                </details>
               </li>
             ))}
           </ul>
@@ -86,16 +101,29 @@ const suggestions = [
   "Help me plan a feature, then list the files you'd touch.",
 ];
 
+function safeJson(value: unknown) {
+  try {
+    return JSON.stringify(value, null, 2).slice(0, 4000);
+  } catch {
+    return String(value);
+  }
+}
+
 export function ChatView({
   chat,
   models,
   model,
   streaming,
   error,
+  retryable,
+  modelsWarning,
   hasApiKey,
+  useMemory,
   onModelChange,
+  onToggleMemory,
   onSend,
   onStop,
+  onRetry,
   onOpenSettings,
 }: Props) {
   const scroller = useRef<HTMLDivElement>(null);
@@ -123,6 +151,21 @@ export function ChatView({
                 {totalTokens.toLocaleString()} tokens
               </span>
             ) : null}
+            <button
+              type="button"
+              className={`memory-toggle ${useMemory ? "on" : ""}`}
+              disabled={!chat || streaming}
+              aria-pressed={useMemory}
+              title={
+                useMemory
+                  ? "Memory on — Cursor user memories/rules load for this chat"
+                  : "Memory off — chat runs without user settingSources"
+              }
+              onClick={onToggleMemory}
+            >
+              <MemoryIcon width={14} height={14} />
+              Memory
+            </button>
             <ModelSelect
               model={model}
               models={models}
@@ -135,8 +178,8 @@ export function ChatView({
       <div className="transcript" ref={scroller}>
         {empty ? (
           <EmptyState
-            title="Start a conversation"
-            description="History stays on this device. MCP servers stay attached to each chat."
+            title="Ask clearly. Get a brief answer."
+            description="History stays on this device. Agents and MCP stay attached to each chat."
           >
             {!hasApiKey ? (
               <button type="button" className="banner" onClick={onOpenSettings}>
@@ -173,7 +216,17 @@ export function ChatView({
             ) : null}
           </>
         )}
-        {error ? <p className="error-line">{error}</p> : null}
+        {modelsWarning ? <p className="warn-line">{modelsWarning}</p> : null}
+        {error ? (
+          <div className="error-banner rise-in">
+            <p className="error-line">{error}</p>
+            {retryable && onRetry ? (
+              <Button variant="accent" onClick={onRetry}>
+                Try again
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
       <div className="chat-bottom">
         <Composer

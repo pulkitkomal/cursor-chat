@@ -17,6 +17,7 @@ const defaultSettings = (): AppSettings => ({
   workspace: defaultWorkspace,
   defaultModel: "auto",
   systemPrompt: ASD_STE100_SYSTEM_PROMPT,
+  useMemory: false,
   loadUserMcp: false,
   loadProjectMcp: false,
   mcpServers: [],
@@ -105,12 +106,16 @@ export async function deleteChat(id: string): Promise<boolean> {
   }
 }
 
-export async function createChat(model: string): Promise<ChatRecord> {
+export async function createChat(
+  model: string,
+  options?: { useMemory?: boolean },
+): Promise<ChatRecord> {
   const now = Date.now();
   const chat: ChatRecord = {
     id: randomUUID(),
     title: "New chat",
     model,
+    useMemory: options?.useMemory ?? false,
     createdAt: now,
     updatedAt: now,
     messages: [],

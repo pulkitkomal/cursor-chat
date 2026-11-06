@@ -115,3 +115,37 @@ export function MoonIcon(props: IconProps) {
     </Icon>
   );
 }
+
+export function ChartIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4 19V5M4 19h16" />
+      <path d="M8 16v-5M12 16V8M16 16v-3" />
+    </Icon>
+  );
+}
+
+export function TopicsIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M5 5h8v14H5zM15 5h4v6h-4zM15 13h4v6h-4z" />
+    </Icon>
+  );
+}
+
+export function SavedIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M7 4h10v16l-5-3.2L7 20V4z" />
+    </Icon>
+  );
+}
+
+export function MemoryIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M8 4h8v4H8zM6 8h12v12H6z" />
+      <path d="M10 12h4M10 15h4" />
+    </Icon>
+  );
+}

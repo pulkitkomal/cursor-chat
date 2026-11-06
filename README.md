@@ -1,19 +1,21 @@
 <img src="assets/icon.svg" width="64" height="64" alt="">
 
-# Cursor Chat
+# Brief
 
-A ChatGPT-style chat app backed by the [Cursor TypeScript SDK](https://cursor.com/docs/sdk/typescript). Each conversation is a durable local `Agent`. Follow-ups call `Agent.resume`, so history survives restarts. MCP servers configured in Settings are passed on every create and resume.
+A ChatGPT-style local agent chat app backed by the [Cursor TypeScript SDK](https://cursor.com/docs/sdk/typescript). Each conversation is a durable local `Agent`. Follow-ups call `Agent.resume`, so history survives restarts. MCP servers configured in Settings are passed on every create and resume.
 
 **Live:** [https://cursor-chat.k4mik4ge.xyz](https://cursor-chat.k4mik4ge.xyz)
 
 ## Features
 
-- Sidebar of previous chats, stored under `data/chats/`
-- Streaming answers, thinking, and tool-call chips
+- Sidebar of previous chats (rename, delete), stored under `data/chats/`
+- Streaming answers, thinking, and expandable tool-call chips
+- Usage tab: Cursor account, local token totals, optional plan quota
 - Model picker from `Cursor.models.list()`
 - HTTP and stdio MCP servers, plus optional `~/.cursor/mcp.json` / `.cursor/mcp.json`
 - Local workspace for file tools (`data/workspace` by default)
 - Optional site login (`AUTH_USERNAME` / `AUTH_PASSWORD`)
+- ASD-STE100 reply style guide on the first message of each chat
 
 ## Requirements
 

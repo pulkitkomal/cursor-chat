@@ -147,11 +147,15 @@ export type TopicsEdition = {
   usage?: TokenUsage;
 };
 
+export type TopicsRefreshStatus = "idle" | "running" | "error";
+
 export type TopicsState = {
   interests: string[];
   edition: TopicsEdition | null;
   lifetimeUsage?: TokenUsage;
   refreshCount?: number;
+  refreshStatus?: TopicsRefreshStatus;
+  refreshError?: string;
 };
 
 export type UsageStats = {

@@ -93,7 +93,7 @@ export function Sidebar({
   }
 
   return (
-    <aside className="sidebar glass">
+    <aside className="sidebar">
       <div className="brand">
         <div className="brand-copy">
           <img src="/brief.svg" alt="" width={28} height={28} />

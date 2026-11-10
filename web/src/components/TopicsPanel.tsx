@@ -270,6 +270,28 @@ export function TopicsPanel({ hasApiKey, onDone, onOpenSettings }: Props) {
   const [saving, setSaving] = useState(false);
   const [savedKeys, setSavedKeys] = useState<Set<string>>(new Set());
 
+  const pollRefresh = useCallback(async () => {
+    setRefreshing(true);
+    setError(null);
+    try {
+      const deadline = Date.now() + 15 * 60 * 1000;
+      while (Date.now() < deadline) {
+        const latest = await api.topics();
+        setState(latest);
+        if (latest.refreshStatus === "error") {
+          throw new Error(latest.refreshError || "Failed to refresh topics");
+        }
+        if (latest.refreshStatus !== "running") return;
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
+      throw new Error("Topics refresh is still running — check back in a minute.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to refresh topics");
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -283,12 +305,15 @@ export function TopicsPanel({ hasApiKey, onDone, onOpenSettings }: Props) {
           ),
         ),
       );
+      if (topics.refreshStatus === "running") {
+        void pollRefresh();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load topics");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [pollRefresh]);
 
   useEffect(() => {
     void load();
@@ -326,13 +351,15 @@ export function TopicsPanel({ hasApiKey, onDone, onOpenSettings }: Props) {
     setRefreshing(true);
     setError(null);
     try {
-      const refreshed = await api.refreshTopics(nextInterests);
-      setState(refreshed);
+      // Kick off in the background — Cloudflare 524s long synchronous agent runs
+      const started = await api.refreshTopics(nextInterests);
+      setState(started);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to refresh topics");
-    } finally {
       setRefreshing(false);
+      return;
     }
+    await pollRefresh();
   }
 
   function addTopic(raw: string) {

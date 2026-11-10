@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-const HOST = process.env.TUNNEL_HOST || "cursor-chat.k4mik4ge.xyz";
+const HOST = process.env.TUNNEL_HOST || "brief.k4mik4ge.xyz";
+const PREVIOUS_HOST = process.env.TUNNEL_PREVIOUS_HOST || "cursor-chat.k4mik4ge.xyz";
 const SERVICE = process.env.TUNNEL_ORIGIN || "http://127.0.0.1:3847";
 const ZONE_NAME = process.env.TUNNEL_ZONE || "k4mik4ge.xyz";
 
@@ -70,11 +71,15 @@ for (const tunnel of tunnels) {
 }
 if (!chosen || !config) throw new Error(`Could not find an existing ${ZONE_NAME} tunnel`);
 
-const ingress = [...(config.config?.ingress ?? [])];
-const already = ingress.some((rule) => rule.hostname === HOST);
-if (!already) {
-  const catchAll = ingress.findIndex((rule) => !rule.hostname);
-  const rule = { hostname: HOST, service: SERVICE };
+const ingress = [...(config.config?.ingress ?? [])].filter(
+  (rule) => rule.hostname !== PREVIOUS_HOST || PREVIOUS_HOST === HOST,
+);
+const existing = ingress.findIndex((rule) => rule.hostname === HOST);
+const rule = { hostname: HOST, service: SERVICE };
+if (existing >= 0) {
+  ingress[existing] = rule;
+} else {
+  const catchAll = ingress.findIndex((entry) => !entry.hostname);
   if (catchAll === -1) ingress.push(rule, { service: "http_status:404" });
   else ingress.splice(catchAll, 0, rule);
 }
@@ -88,9 +93,9 @@ const zones = await cf(`/zones?name=${ZONE_NAME}`);
 const zone = zones[0];
 if (!zone) throw new Error(`Zone ${ZONE_NAME} not found`);
 
-const records = await cf(`/zones/${zone.id}/dns_records?type=CNAME&name=${HOST}`);
 const target = `${chosen.id}.cfargotunnel.com`;
 const payload = { type: "CNAME", name: HOST, content: target, proxied: true };
+const records = await cf(`/zones/${zone.id}/dns_records?type=CNAME&name=${HOST}`);
 if (records[0]) {
   if (records[0].content !== target || !records[0].proxied) {
     await cf(`/zones/${zone.id}/dns_records/${records[0].id}`, {
@@ -103,6 +108,13 @@ if (records[0]) {
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+if (PREVIOUS_HOST && PREVIOUS_HOST !== HOST) {
+  const stale = await cf(`/zones/${zone.id}/dns_records?type=CNAME&name=${PREVIOUS_HOST}`);
+  for (const record of stale) {
+    await cf(`/zones/${zone.id}/dns_records/${record.id}`, { method: "DELETE" });
+  }
 }
 
 const hostnames = (ingress ?? [])

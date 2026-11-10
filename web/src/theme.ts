@@ -25,7 +25,10 @@ export function applyTheme(theme: Theme) {
   document.documentElement.dataset.theme = theme;
   document.documentElement.style.colorScheme = theme;
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute("content", theme === "light" ? "#eef1f6" : "#0a0b0f");
+  if (meta) meta.setAttribute("content", theme === "light" ? "#f3eee7" : "#0c0b0a");
+  const status = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
+  // Keep the iOS status bar opaque so chrome never draws under a blurred system bar
+  if (status) status.setAttribute("content", theme === "light" ? "default" : "black");
 }
 
 export function persistTheme(theme: Theme) {

@@ -37,7 +37,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     }
     throw new AuthRequiredError();
   }
-  if (!response.ok) {
+  // 202 Accepted — background jobs (e.g. topics refresh) return immediately
+  if (!response.ok && response.status !== 202) {
     throw new Error(
       typeof body.error === "string" ? body.error : `Request failed (${response.status})`,
     );

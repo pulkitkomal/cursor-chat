@@ -4,7 +4,7 @@
 
 A ChatGPT-style local agent chat app backed by the [Cursor TypeScript SDK](https://cursor.com/docs/sdk/typescript). Each conversation is a durable local `Agent`. Follow-ups call `Agent.resume`, so history survives restarts. MCP servers configured in Settings are passed on every create and resume.
 
-**Live:** [https://cursor-chat.k4mik4ge.xyz](https://cursor-chat.k4mik4ge.xyz)
+**Live:** [https://brief.k4mik4ge.xyz](https://brief.k4mik4ge.xyz)
 
 ## Features
 
@@ -75,13 +75,13 @@ The container binds `0.0.0.0:3847`. Local `npm start` still defaults to `127.0.0
 
 ## Public URL
 
-The app is published on a Cloudflare tunnel as [https://cursor-chat.k4mik4ge.xyz](https://cursor-chat.k4mik4ge.xyz). Set `AUTH_USERNAME` and `AUTH_PASSWORD` in `.env` to require a login.
+The app is published on a Cloudflare tunnel as [https://brief.k4mik4ge.xyz](https://brief.k4mik4ge.xyz). Set `AUTH_USERNAME` and `AUTH_PASSWORD` in `.env` to require a login.
 
 ```bash
 node scripts/publish-tunnel.mjs
 ```
 
-That script needs `CLOUDFLARE_API_TOKEN` (zone DNS + account tunnel edit). It points `cursor-chat.k4mik4ge.xyz` at `http://127.0.0.1:3847`.
+That script needs `CLOUDFLARE_API_TOKEN` (zone DNS + account tunnel edit). It points `brief.k4mik4ge.xyz` at `http://127.0.0.1:3847`.
 
 ## Credits
 

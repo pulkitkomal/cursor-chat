@@ -37,10 +37,10 @@ import {
 } from "./auth.ts";
 import { collectUsageStats } from "./usage.ts";
 import {
-  addTokenUsage,
+  beginTopicsRefresh,
   normalizeInterests,
   readTopicsState,
-  refreshTopicsEdition,
+  readTopicsStateWithRefresh,
   writeTopicsState,
 } from "./topics.ts";
 import {
@@ -252,7 +252,7 @@ app.post("/api/mcp/test", async (req, res) => {
 });
 
 app.get("/api/topics", async (_req, res) => {
-  res.json(await readTopicsState());
+  res.json(await readTopicsStateWithRefresh());
 });
 
 app.put("/api/topics/interests", async (req, res) => {
@@ -274,7 +274,7 @@ app.put("/api/topics/interests", async (req, res) => {
     refreshCount: current.refreshCount ?? 0,
   };
   await writeTopicsState(next);
-  res.json(next);
+  res.json(await readTopicsStateWithRefresh());
 });
 
 app.post("/api/topics/refresh", async (req, res) => {
@@ -295,30 +295,14 @@ app.post("/api/topics/refresh", async (req, res) => {
       res.status(400).json({ error: "Add at least one topic before refreshing." });
       return;
     }
-    const edition = await refreshTopicsEdition({
+    // Run in the background — Cloudflare 524s if this stays open past ~100s.
+    beginTopicsRefresh({
       interests,
       apiKey,
       workspace: settings.workspace,
       model: settings.defaultModel,
     });
-    const next = {
-      interests,
-      edition,
-      lifetimeUsage: addTokenUsage(
-        current.lifetimeUsage ?? {
-          inputTokens: 0,
-          outputTokens: 0,
-          cacheReadTokens: 0,
-          cacheWriteTokens: 0,
-          totalTokens: 0,
-          reasoningTokens: 0,
-        },
-        edition.usage,
-      ),
-      refreshCount: (current.refreshCount ?? 0) + 1,
-    };
-    await writeTopicsState(next);
-    res.json(next);
+    res.status(202).json(await readTopicsStateWithRefresh());
   } catch (error) {
     res.status(500).json({
       error: error instanceof Error ? error.message : "Failed to refresh topics",
@@ -638,12 +622,23 @@ app.post("/api/chats/:id/messages", async (req, res) => {
 
 if (process.env.NODE_ENV === "production") {
   const webDir = path.join(root, "dist/web");
-  app.use(express.static(webDir));
+  app.use(
+    express.static(webDir, {
+      setHeaders(res, filePath) {
+        if (filePath.endsWith("index.html") || filePath.endsWith(".webmanifest")) {
+          res.setHeader("Cache-Control", "no-cache");
+        } else {
+          res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+        }
+      },
+    }),
+  );
   app.use((req, res, next) => {
     if (req.method !== "GET" || req.path.startsWith("/api")) {
       next();
       return;
     }
+    res.setHeader("Cache-Control", "no-cache");
     res.sendFile(path.join(webDir, "index.html"));
   });
 }

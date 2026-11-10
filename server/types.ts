@@ -128,12 +128,17 @@ export type TopicsEdition = {
   usage?: TokenUsage;
 };
 
+export type TopicsRefreshStatus = "idle" | "running" | "error";
+
 export type TopicsState = {
   interests: string[];
   edition: TopicsEdition | null;
   /** Cumulative Topics refresh usage on this device. */
   lifetimeUsage?: TokenUsage;
   refreshCount?: number;
+  /** Ephemeral — set by the API while a background refresh is in flight. */
+  refreshStatus?: TopicsRefreshStatus;
+  refreshError?: string;
 };
 
 export type SavedStory = {

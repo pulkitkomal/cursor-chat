@@ -123,16 +123,45 @@ export function App() {
     const viewport = window.visualViewport;
     if (!viewport) return;
     const vv = viewport;
+    const probe = document.createElement("div");
+    probe.style.cssText =
+      "position:fixed;left:0;bottom:0;width:0;height:0;padding-bottom:env(safe-area-inset-bottom,0px);padding-top:env(safe-area-inset-top,0px);visibility:hidden;pointer-events:none";
+    document.body.appendChild(probe);
     function syncKeyboard() {
-      const inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      // iOS PWA often reports a small occlusion from the home indicator; that is
+      // already handled by --safe-b. Only lift for a real keyboard.
+      const occluded = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      const safeBottom = Number.parseFloat(getComputedStyle(probe).paddingBottom) || 0;
+      const inset = occluded > safeBottom + 40 ? occluded : 0;
       document.documentElement.style.setProperty("--keyboard-inset", `${inset}px`);
     }
-    syncKeyboard();
-    vv.addEventListener("resize", syncKeyboard);
-    vv.addEventListener("scroll", syncKeyboard);
+    function syncSafeArea() {
+      const styles = getComputedStyle(probe);
+      const top = Number.parseFloat(styles.paddingTop) || 0;
+      const bottom = Number.parseFloat(styles.paddingBottom) || 0;
+      // Pin resolved px values — env() can stay 0 on iOS PWA cold start until a reflow
+      if (top > 0) document.documentElement.style.setProperty("--safe-t", `${top}px`);
+      if (bottom > 0) document.documentElement.style.setProperty("--safe-b", `${bottom}px`);
+    }
+    function syncInsets() {
+      syncSafeArea();
+      syncKeyboard();
+    }
+    syncInsets();
+    const raf = window.requestAnimationFrame(() => syncInsets());
+    const t1 = window.setTimeout(syncInsets, 50);
+    const t2 = window.setTimeout(syncInsets, 300);
+    vv.addEventListener("resize", syncInsets);
+    vv.addEventListener("scroll", syncInsets);
+    window.addEventListener("pageshow", syncInsets);
     return () => {
-      vv.removeEventListener("resize", syncKeyboard);
-      vv.removeEventListener("scroll", syncKeyboard);
+      window.cancelAnimationFrame(raf);
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+      vv.removeEventListener("resize", syncInsets);
+      vv.removeEventListener("scroll", syncInsets);
+      window.removeEventListener("pageshow", syncInsets);
+      probe.remove();
     };
   }, []);
 

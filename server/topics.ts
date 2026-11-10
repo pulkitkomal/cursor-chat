@@ -108,7 +108,82 @@ export async function readTopicsState(): Promise<TopicsState> {
 
 export async function writeTopicsState(next: TopicsState): Promise<void> {
   await ensureDataDir();
-  await atomicWrite(topicsPath, JSON.stringify(next, null, 2));
+  const { refreshStatus: _status, refreshError: _error, ...persisted } = next;
+  await atomicWrite(topicsPath, JSON.stringify(persisted, null, 2));
+}
+
+type RefreshMeta = {
+  status: "idle" | "running" | "error";
+  error?: string;
+  startedAt?: number;
+};
+
+let refreshMeta: RefreshMeta = { status: "idle" };
+let refreshInFlight: Promise<void> | null = null;
+
+export function getTopicsRefreshMeta(): RefreshMeta {
+  return refreshMeta;
+}
+
+export async function readTopicsStateWithRefresh(): Promise<TopicsState> {
+  const state = await readTopicsState();
+  if (refreshMeta.status === "running") {
+    return { ...state, refreshStatus: "running" };
+  }
+  if (refreshMeta.status === "error") {
+    return {
+      ...state,
+      refreshStatus: "error",
+      ...(refreshMeta.error ? { refreshError: refreshMeta.error } : {}),
+    };
+  }
+  return { ...state, refreshStatus: "idle" };
+}
+
+/** Start a background edition refresh. Safe to call while one is already running. */
+export function beginTopicsRefresh(input: {
+  interests: string[];
+  apiKey: string;
+  workspace: string;
+  model?: string;
+}): { started: boolean; status: RefreshMeta["status"] } {
+  if (refreshMeta.status === "running" && refreshInFlight) {
+    return { started: false, status: "running" };
+  }
+
+  const interests = normalizeInterests(input.interests);
+  refreshMeta = { status: "running", startedAt: Date.now() };
+  refreshInFlight = (async () => {
+    try {
+      const current = await readTopicsState();
+      const edition = await refreshTopicsEdition({
+        interests,
+        apiKey: input.apiKey,
+        workspace: input.workspace,
+        model: input.model,
+      });
+      const next: TopicsState = {
+        interests,
+        edition,
+        lifetimeUsage: addTokenUsage(
+          current.lifetimeUsage ?? emptyUsage(),
+          edition.usage,
+        ),
+        refreshCount: (current.refreshCount ?? 0) + 1,
+      };
+      await writeTopicsState(next);
+      refreshMeta = { status: "idle" };
+    } catch (error) {
+      refreshMeta = {
+        status: "error",
+        error: error instanceof Error ? error.message : "Failed to refresh topics",
+      };
+    } finally {
+      refreshInFlight = null;
+    }
+  })();
+
+  return { started: true, status: "running" };
 }
 
 export function normalizeInterests(input: unknown): string[] {
@@ -321,6 +396,97 @@ export function normalizeSection(topic: string, raw: unknown): TopicSection {
   };
 }
 
+function stripJsonNoise(raw: string): string {
+  return raw
+    .replace(/^\uFEFF/, "")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/,\s*([}\]])/g, "$1");
+}
+
+/** Insert missing commas between adjacent JSON values (common LLM slip). */
+function insertMissingCommas(raw: string): string {
+  return raw.replace(
+    /([}\]"0-9]|true|false|null)\s*(?=["{\[\-]|true\b|false\b|null\b)/g,
+    (match, left: string, offset: number, source: string) => {
+      // Don't touch content inside strings — approximate with quote parity.
+      const before = source.slice(0, offset + String(left).length);
+      let inString = false;
+      let escaped = false;
+      for (const ch of before) {
+        if (escaped) {
+          escaped = false;
+          continue;
+        }
+        if (ch === "\\") {
+          escaped = true;
+          continue;
+        }
+        if (ch === '"') inString = !inString;
+      }
+      if (inString) return match;
+      return `${left},`;
+    },
+  );
+}
+
+function closeTruncatedJson(raw: string): string {
+  let inString = false;
+  let escaped = false;
+  const stack: string[] = [];
+  for (const ch of raw) {
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (ch === "\\" && inString) {
+      escaped = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (ch === "{") stack.push("}");
+    else if (ch === "[") stack.push("]");
+    else if (ch === "}" || ch === "]") {
+      if (stack.length > 0 && stack[stack.length - 1] === ch) stack.pop();
+    }
+  }
+  let out = raw;
+  if (inString) out += '"';
+  // Drop a dangling trailing comma before we close.
+  out = out.replace(/,\s*$/, "");
+  while (stack.length > 0) out += stack.pop();
+  return out;
+}
+
+function tryParseJson(raw: string): unknown {
+  return JSON.parse(raw);
+}
+
+function parseJsonLenient(raw: string): unknown {
+  const attempts = [
+    raw,
+    stripJsonNoise(raw),
+    stripJsonNoise(insertMissingCommas(raw)),
+    stripJsonNoise(insertMissingCommas(closeTruncatedJson(raw))),
+  ];
+  let lastError: Error | undefined;
+  const seen = new Set<string>();
+  for (const candidate of attempts) {
+    if (seen.has(candidate)) continue;
+    seen.add(candidate);
+    try {
+      return tryParseJson(candidate);
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+    }
+  }
+  throw lastError ?? new Error("Invalid JSON");
+}
+
 function extractJsonObject(text: string): unknown {
   const trimmed = text.trim();
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
@@ -330,7 +496,18 @@ function extractJsonObject(text: string): unknown {
   if (start === -1 || end === -1 || end <= start) {
     throw new Error("Model reply did not include a JSON object");
   }
-  return JSON.parse(candidate.slice(start, end + 1));
+  return parseJsonLenient(candidate.slice(start, end + 1));
+}
+
+function jsonRepairPrompt(topic: string, parseError: string): string {
+  return [
+    `Your previous reply for topic "${topic}" was not valid JSON.`,
+    `Parser error: ${parseError}`,
+    "Return ONLY one corrected JSON object for that same topic.",
+    "No markdown fences, no commentary.",
+    "Use strict JSON: double quotes, commas between every array/object element, no trailing commas.",
+    "Keep the same schema (headline, dek, stories, figures) and the 3-day recency rules.",
+  ].join("\n");
 }
 
 function briefingPrompt(topic: string): string {
@@ -346,6 +523,7 @@ function briefingPrompt(topic: string): string {
     `Recency window: only stories published from ${oldest} through ${todayIso} (last 3 days inclusive).`,
     "",
     "Return ONLY a single JSON object. No markdown outside JSON. No commentary.",
+    "Strict JSON only: double quotes, a comma between every array/object element, no trailing commas, no comments.",
     "Use current, factual knowledge. If unsure, say so briefly in the summary.",
     "Prefer short sentences.",
     "",
@@ -416,42 +594,56 @@ export async function refreshTopicsEdition(input: {
 
   const results = await mapPool(interests, 2, async (topic) => {
     let agent: Awaited<ReturnType<typeof Agent.create>> | null = null;
+    let usage = emptyUsage();
     try {
       agent = await Agent.create({
         apiKey: input.apiKey,
         model: { id: modelId },
         local: { cwd: input.workspace },
       } as Parameters<typeof Agent.create>[0]);
-      let streamed = "";
-      const run = await agent.send(briefingPrompt(topic), {
-        model: { id: modelId },
-        local: { force: true },
-        onDelta: ({ update }) => {
-          if (update.type === "text-delta" && typeof update.text === "string") {
-            streamed += update.text;
-          }
-        },
-      });
-      const result = await run.wait();
-      const usage = asTokenUsage(
-        (result as { usage?: unknown }).usage ??
-          (result as { result?: { usage?: unknown } }).result,
-      );
-      if (result.status === "error") {
-        throw Object.assign(
-          new Error(result.error?.message ?? "Topic briefing failed"),
-          { usage },
+
+      const runPrompt = async (prompt: string) => {
+        let streamed = "";
+        const run = await agent!.send(prompt, {
+          model: { id: modelId },
+          local: { force: true },
+          onDelta: ({ update }) => {
+            if (update.type === "text-delta" && typeof update.text === "string") {
+              streamed += update.text;
+            }
+          },
+        });
+        const result = await run.wait();
+        usage = addTokenUsage(
+          usage,
+          asTokenUsage(
+            (result as { usage?: unknown }).usage ??
+              (result as { result?: { usage?: unknown } }).result,
+          ),
         );
+        if (result.status === "error") {
+          throw Object.assign(
+            new Error(result.error?.message ?? "Topic briefing failed"),
+            { usage },
+          );
+        }
+        const text = result.result?.trim() || streamed.trim() || extractMessageText(result);
+        if (!text) throw Object.assign(new Error("Empty briefing response"), { usage });
+        return text;
+      };
+
+      const text = await runPrompt(briefingPrompt(topic));
+      let parsed: unknown;
+      try {
+        parsed = extractJsonObject(text);
+      } catch (parseError) {
+        const message =
+          parseError instanceof Error ? parseError.message : "Invalid JSON";
+        const repaired = await runPrompt(jsonRepairPrompt(topic, message));
+        parsed = extractJsonObject(repaired);
       }
-      const text = result.result?.trim() || streamed.trim() || extractMessageText(result);
-      if (!text) throw Object.assign(new Error("Empty briefing response"), { usage });
-      const parsed = extractJsonObject(text);
       return { section: normalizeSection(topic, parsed), usage };
     } catch (error) {
-      const usage =
-        error && typeof error === "object" && "usage" in error
-          ? ((error as { usage?: TokenUsage }).usage)
-          : undefined;
       return {
         section: {
           topic,
@@ -466,7 +658,10 @@ export async function refreshTopicsEdition(input: {
           figures: [],
           error: error instanceof Error ? error.message : "Unknown error",
         } satisfies TopicSection,
-        usage,
+        usage:
+          error && typeof error === "object" && "usage" in error
+            ? addTokenUsage(usage, (error as { usage?: TokenUsage }).usage)
+            : usage,
       };
     } finally {
       if (agent) {

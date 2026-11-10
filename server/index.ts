@@ -49,6 +49,14 @@ import {
   readSavedStories,
   saveStory,
 } from "./saved.ts";
+import {
+  normalizeChatObsidianInput,
+  readObsidianSyncStatus,
+  resolveAgentWorkspace,
+  syncChatToObsidian,
+  syncSavedStoryToObsidian,
+  syncTopicsEditionToObsidian,
+} from "./obsidian.ts";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const port = Number(process.env.PORT ?? 3847);
@@ -80,13 +88,14 @@ async function runtimeFromSettings(
     (error as Error & { status: number }).status = 401;
     throw error;
   }
-  await mkdir(settings.workspace, { recursive: true });
+  const workspace = resolveAgentWorkspace(settings);
+  await mkdir(workspace, { recursive: true });
   return {
     apiKey,
     source,
     options: {
       apiKey,
-      workspace: settings.workspace,
+      workspace,
       model,
       systemPrompt: settings.systemPrompt,
       mcpServers: toSdkMcpServers(settings.mcpServers),
@@ -153,6 +162,18 @@ app.put("/api/settings", async (req, res) => {
         : current.loadProjectMcp,
     useMemory: typeof body.useMemory === "boolean" ? body.useMemory : current.useMemory,
     mcpServers: Array.isArray(body.mcpServers) ? body.mcpServers : current.mcpServers,
+    obsidianEnabled:
+      typeof body.obsidianEnabled === "boolean"
+        ? body.obsidianEnabled
+        : current.obsidianEnabled,
+    obsidianVault:
+      typeof body.obsidianVault === "string" && body.obsidianVault.trim()
+        ? body.obsidianVault.trim()
+        : current.obsidianVault,
+    obsidianUseAsWorkspace:
+      typeof body.obsidianUseAsWorkspace === "boolean"
+        ? body.obsidianUseAsWorkspace
+        : current.obsidianUseAsWorkspace,
   };
   if (body.apiKey === null || body.apiKey === "") {
     delete next.apiKey;
@@ -287,7 +308,8 @@ app.post("/api/topics/refresh", async (req, res) => {
       });
       return;
     }
-    await mkdir(settings.workspace, { recursive: true });
+    const workspace = resolveAgentWorkspace(settings);
+    await mkdir(workspace, { recursive: true });
     const current = await readTopicsState();
     const bodyInterests = normalizeInterests(req.body?.interests);
     const interests = bodyInterests.length > 0 ? bodyInterests : current.interests;
@@ -299,13 +321,69 @@ app.post("/api/topics/refresh", async (req, res) => {
     beginTopicsRefresh({
       interests,
       apiKey,
-      workspace: settings.workspace,
+      workspace,
       model: settings.defaultModel,
     });
     res.status(202).json(await readTopicsStateWithRefresh());
   } catch (error) {
     res.status(500).json({
       error: error instanceof Error ? error.message : "Failed to refresh topics",
+    });
+  }
+});
+
+app.get("/api/obsidian/status", async (_req, res) => {
+  res.json(await readObsidianSyncStatus());
+});
+
+app.post("/api/obsidian/sync-chat", async (req, res) => {
+  try {
+    const settings = await readSettings();
+    if (!settings.obsidianEnabled) {
+      res.status(400).json({ error: "Enable Obsidian sync in Settings first." });
+      return;
+    }
+    const input = normalizeChatObsidianInput(req.body);
+    if (!input) {
+      res.status(400).json({
+        error: "chatId and at least one message with id, role, and text are required",
+      });
+      return;
+    }
+    const result = await syncChatToObsidian(settings, input);
+    if (!result.ok) {
+      res.status(500).json({ error: result.reason || "Obsidian chat sync failed" });
+      return;
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({
+      error: error instanceof Error ? error.message : "Obsidian chat sync failed",
+    });
+  }
+});
+
+app.post("/api/obsidian/sync-topics", async (_req, res) => {
+  try {
+    const settings = await readSettings();
+    if (!settings.obsidianEnabled) {
+      res.status(400).json({ error: "Enable Obsidian sync in Settings first." });
+      return;
+    }
+    const topics = await readTopicsState();
+    if (!topics.edition || topics.edition.sections.length === 0) {
+      res.status(400).json({ error: "No Topics edition to sync. Refresh Topics first." });
+      return;
+    }
+    const result = await syncTopicsEditionToObsidian(settings, topics.edition);
+    if (!result.ok) {
+      res.status(500).json({ error: result.reason || "Obsidian sync failed" });
+      return;
+    }
+    res.json({ ...result, status: await readObsidianSyncStatus() });
+  } catch (error) {
+    res.status(500).json({
+      error: error instanceof Error ? error.message : "Obsidian sync failed",
     });
   }
 });
@@ -321,6 +399,20 @@ app.post("/api/saved", async (req, res) => {
     return;
   }
   const { item, created } = await saveStory(input);
+  if (created) {
+    try {
+      const settings = await readSettings();
+      const syncResult = await syncSavedStoryToObsidian(settings, item);
+      if (!syncResult.ok) {
+        console.error("[obsidian] Saved story sync failed", syncResult.reason);
+      }
+    } catch (syncError) {
+      console.error(
+        "[obsidian] Saved story sync error:",
+        syncError instanceof Error ? syncError.message : syncError,
+      );
+    }
+  }
   res.status(created ? 201 : 200).json({ item, created });
 });
 
@@ -421,7 +513,9 @@ app.delete("/api/chats/:id", async (req, res) => {
   await disposeChatAgent(chat.id);
   if (chat.agentId) {
     try {
-      await Agent.delete(chat.agentId, { cwd: (await readSettings()).workspace });
+      await Agent.delete(chat.agentId, {
+        cwd: resolveAgentWorkspace(await readSettings()),
+      });
     } catch {
       // local store may already be gone
     }

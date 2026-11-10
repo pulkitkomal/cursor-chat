@@ -16,6 +16,21 @@ A ChatGPT-style local agent chat app backed by the [Cursor TypeScript SDK](https
 - Local workspace for file tools (`data/workspace` by default)
 - Optional site login (`AUTH_USERNAME` / `AUTH_PASSWORD`)
 - ASD-STE100 reply style guide on the first message of each chat
+- Optional Obsidian sync: Topics (and Saved stories) write linked markdown under `Brief/` in a local vault (Settings → Obsidian). Enable **Use vault as chat workspace** so agents can read those notes.
+
+## Obsidian vault contract
+
+Brief owns files under `Brief/` only. Other ingest sources should use a different `source` / `id` namespace and must not overwrite Brief-managed frontmatter above `<!-- brief:generated -->`. Put personal edits below `<!-- brief:user -->`.
+
+| Path | Role |
+|------|------|
+| `Brief/Index.md` | Hub linking current topic notes |
+| `Brief/Topics/<Topic>.md` | One note per interest |
+| `Brief/Stories/<Title> (<id>).md` | One note per story |
+| `Brief/Entities/<Name>.md` | Shared graph nodes (people/orgs/places/products + publishers) |
+| `Brief/Chats/<Title> (<id>).md` | Full chat transcript via header **Add to Obsidian** (`source: brief-chat`) |
+
+Frontmatter includes `id`, `source` (`brief-topics` \| `brief-saved`), `type`, `tags`, and `contentHash` (unchanged notes are skipped on sync).
 
 ## Requirements
 

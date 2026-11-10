@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { CopyIcon, MemoryIcon } from "./Icons";
+import { api } from "../api";
+import { CopyIcon, MemoryIcon, ObsidianIcon } from "./Icons";
 import { Markdown } from "./Markdown";
 import type { Chat, ChatMessage, ModelOption } from "../types";
 import { Composer } from "./Composer";
@@ -17,6 +18,7 @@ type Props = {
   modelsWarning?: string | null;
   hasApiKey: boolean;
   useMemory: boolean;
+  obsidianEnabled: boolean;
   onModelChange: (model: string) => void;
   onToggleMemory: () => void;
   onSend: (text: string) => void;
@@ -119,6 +121,7 @@ export function ChatView({
   modelsWarning,
   hasApiKey,
   useMemory,
+  obsidianEnabled,
   onModelChange,
   onToggleMemory,
   onSend,
@@ -127,6 +130,9 @@ export function ChatView({
   onOpenSettings,
 }: Props) {
   const scroller = useRef<HTMLDivElement>(null);
+  const [obsidianState, setObsidianState] = useState<"idle" | "saving" | "saved" | "error">(
+    "idle",
+  );
 
   useEffect(() => {
     const node = scroller.current;
@@ -134,11 +140,43 @@ export function ChatView({
     node.scrollTop = node.scrollHeight;
   }, [chat?.messages, streaming]);
 
+  useEffect(() => {
+    setObsidianState("idle");
+  }, [chat?.id]);
+
   const last = chat?.messages.at(-1);
   const empty = !chat || chat.messages.length === 0;
   const waitingForAssistant = streaming && (!last || last.role === "user");
   const totalTokens =
     chat?.messages.reduce((sum, message) => sum + (message.usage?.totalTokens ?? 0), 0) ?? 0;
+  const canAddToObsidian =
+    Boolean(obsidianEnabled && chat && !streaming) &&
+    Boolean(chat?.messages.some((message) => message.text.trim()));
+
+  async function addChatToObsidian() {
+    if (!chat || obsidianState === "saving") return;
+    setObsidianState("saving");
+    try {
+      const result = await api.syncChatToObsidian({
+        chatId: chat.id,
+        chatTitle: chat.title,
+        messages: chat.messages
+          .filter((message) => message.text.trim())
+          .map((message) => ({
+            id: message.id,
+            role: message.role,
+            text: message.text,
+            createdAt: message.createdAt,
+          })),
+      });
+      if (result.skipped && result.reason) throw new Error(result.reason);
+      setObsidianState("saved");
+      window.setTimeout(() => setObsidianState("idle"), 1600);
+    } catch {
+      setObsidianState("error");
+      window.setTimeout(() => setObsidianState("idle"), 2200);
+    }
+  }
 
   return (
     <section className="chat">
@@ -150,6 +188,24 @@ export function ChatView({
               <span className="token-total" title="Total tokens used in this chat">
                 {totalTokens.toLocaleString()} tokens
               </span>
+            ) : null}
+            {obsidianEnabled ? (
+              <button
+                type="button"
+                className="memory-toggle"
+                disabled={!canAddToObsidian || obsidianState === "saving"}
+                title="Save this whole chat into Obsidian"
+                onClick={() => void addChatToObsidian()}
+              >
+                <ObsidianIcon width={14} height={14} />
+                {obsidianState === "saving"
+                  ? "Adding…"
+                  : obsidianState === "saved"
+                    ? "Added"
+                    : obsidianState === "error"
+                      ? "Failed"
+                      : "Add to Obsidian"}
+              </button>
             ) : null}
             <button
               type="button"

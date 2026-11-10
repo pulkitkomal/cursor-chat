@@ -30,6 +30,12 @@ export type AppSettings = {
   loadUserMcp: boolean;
   loadProjectMcp: boolean;
   mcpServers: McpServerEntry[];
+  /** Write Topics editions into an Obsidian vault as linked markdown. */
+  obsidianEnabled: boolean;
+  /** Absolute path to the Obsidian vault root on this machine. */
+  obsidianVault: string;
+  /** When true, chat/Topics agents use the Obsidian vault as their local cwd. */
+  obsidianUseAsWorkspace: boolean;
 };
 
 export type TokenUsage = {
@@ -99,6 +105,13 @@ export type TopicSource = {
   publisher?: string;
 };
 
+export type TopicEntityKind = "person" | "org" | "place" | "product" | "other";
+
+export type TopicEntity = {
+  name: string;
+  kind?: TopicEntityKind;
+};
+
 export type TopicStory = {
   title: string;
   summary: string;
@@ -109,6 +122,8 @@ export type TopicStory = {
   sources?: TopicSource[];
   /** Legacy free-text source labels. */
   sourceHints?: string[];
+  /** Named entities for Obsidian graph links. */
+  entities?: TopicEntity[];
   image?: { url: string; alt: string; credit?: string };
 };
 
@@ -150,5 +165,17 @@ export type SavedStory = {
   bullets?: string[];
   sources?: TopicSource[];
   sourceHints?: string[];
+  entities?: TopicEntity[];
   image?: { url: string; alt: string; credit?: string };
+};
+
+export type ObsidianSyncStatus = {
+  lastSuccessAt?: number;
+  lastErrorAt?: number;
+  lastError?: string;
+  lastTopicNotes?: number;
+  lastStoryNotes?: number;
+  lastEntityNotes?: number;
+  lastSkippedNotes?: number;
+  vaultPath?: string;
 };

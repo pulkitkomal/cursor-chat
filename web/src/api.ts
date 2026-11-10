@@ -5,6 +5,7 @@ import type {
   ModelOption,
   SavedStory,
   Settings,
+  ObsidianSyncStatus,
   StreamEvent,
   TopicStory,
   TopicsState,
@@ -82,6 +83,43 @@ export const api = {
     request<TopicsState>("/api/topics/refresh", {
       method: "POST",
       body: JSON.stringify(interests ? { interests } : {}),
+    }),
+  obsidianStatus: () => request<ObsidianSyncStatus>("/api/obsidian/status"),
+  syncChatToObsidian: (body: {
+    chatId: string;
+    chatTitle: string;
+    messages: {
+      id: string;
+      role: "user" | "assistant";
+      text: string;
+      createdAt: number;
+    }[];
+  }) =>
+    request<{
+      ok: boolean;
+      skipped?: boolean;
+      reason?: string;
+      notePath?: string;
+      vaultPath?: string;
+      messageCount?: number;
+    }>("/api/obsidian/sync-chat", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  syncTopicsToObsidian: () =>
+    request<{
+      ok: boolean;
+      skipped?: boolean;
+      reason?: string;
+      topicNotes: number;
+      storyNotes: number;
+      entityNotes: number;
+      skippedNotes: number;
+      vaultPath?: string;
+      status?: ObsidianSyncStatus;
+    }>("/api/obsidian/sync-topics", {
+      method: "POST",
+      body: "{}",
     }),
   saved: () => request<{ items: SavedStory[] }>("/api/saved"),
   saveStory: (story: TopicStory & { topic: string }) =>

@@ -2068,6 +2068,11 @@ html[data-theme="light"] .login-notices {
     -webkit-backdrop-filter: none;
   }
 
+  .app > main {
+    position: relative;
+    z-index: 1;
+  }
+
   .sidebar,
   .sidebar.glass {
     position: fixed;
@@ -2087,10 +2092,11 @@ html[data-theme="light"] .login-notices {
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
     box-shadow: 8px 0 32px rgba(0, 0, 0, 0.35);
-    /* translate3d — avoid visibility:hidden, which can stick closed on iOS */
     transform: translate3d(-105%, 0, 0);
-    pointer-events: none;
-    transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+    /* iOS hit-tests the pre-transform box; hide completely while closed */
+    visibility: hidden;
+    pointer-events: none !important;
+    transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1), visibility 0s linear 0.28s;
     padding: calc(12px + var(--safe-t)) 12px calc(12px + var(--safe-b));
     -webkit-overflow-scrolling: touch;
   }
@@ -2103,7 +2109,9 @@ html[data-theme="light"] .login-notices {
 
   .sidebar-open .sidebar {
     transform: translate3d(0, 0, 0);
-    pointer-events: auto;
+    visibility: visible;
+    pointer-events: auto !important;
+    transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1), visibility 0s;
   }
 
   .sidebar .chat-list {

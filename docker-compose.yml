@@ -14,10 +14,13 @@ services:
       AUTH_USERNAME: ${AUTH_USERNAME:-}
       AUTH_PASSWORD: ${AUTH_PASSWORD:-}
       AUTH_SECRET: ${AUTH_SECRET:-}
+      OBSIDIAN_VAULT: ${OBSIDIAN_VAULT:-/vault}
     env_file:
       - path: .env
         required: false
     volumes:
       - ./data:/app/data
+      # Prefer the vault Obsidian actually has open (linuxserver default path).
+      - ${OBSIDIAN_VAULT_HOST:-/home/pi5/.t3/scratch/2026-11-10-setup-obsidian-and-then-deploy-a5ec2c7e/config/Obsidian Vault}:/vault
     init: true
     restart: unless-stopped

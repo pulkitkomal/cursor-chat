@@ -26,6 +26,9 @@ export type Settings = {
   loadUserMcp: boolean;
   loadProjectMcp: boolean;
   mcpServers: McpServerEntry[];
+  obsidianEnabled: boolean;
+  obsidianVault: string;
+  obsidianUseAsWorkspace: boolean;
   hasApiKey: boolean;
   apiKeySource: "settings" | "env" | "none";
   hasSessionToken?: boolean;
@@ -83,7 +86,19 @@ export type SavedStory = {
   bullets?: string[];
   sources?: TopicSource[];
   sourceHints?: string[];
+  entities?: TopicEntity[];
   image?: { url: string; alt: string; credit?: string };
+};
+
+export type ObsidianSyncStatus = {
+  lastSuccessAt?: number;
+  lastErrorAt?: number;
+  lastError?: string;
+  lastTopicNotes?: number;
+  lastStoryNotes?: number;
+  lastEntityNotes?: number;
+  lastSkippedNotes?: number;
+  vaultPath?: string;
 };
 
 export type Chat = ChatSummary & {
@@ -122,6 +137,13 @@ export type TopicFigure =
       unit?: string;
     };
 
+export type TopicEntityKind = "person" | "org" | "place" | "product" | "other";
+
+export type TopicEntity = {
+  name: string;
+  kind?: TopicEntityKind;
+};
+
 export type TopicStory = {
   title: string;
   summary: string;
@@ -129,6 +151,7 @@ export type TopicStory = {
   bullets?: string[];
   sources?: TopicSource[];
   sourceHints?: string[];
+  entities?: TopicEntity[];
   image?: { url: string; alt: string; credit?: string };
 };
 

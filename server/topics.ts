@@ -3,8 +3,12 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { Agent, asTokenUsage, extractMessageText } from "./agent.ts";
+import { syncTopicsEditionToObsidian } from "./obsidian.ts";
+import { readSettings } from "./store.ts";
 import type {
   TokenUsage,
+  TopicEntity,
+  TopicEntityKind,
   TopicFigure,
   TopicSection,
   TopicSource,
@@ -172,6 +176,22 @@ export function beginTopicsRefresh(input: {
         refreshCount: (current.refreshCount ?? 0) + 1,
       };
       await writeTopicsState(next);
+      try {
+        const settings = await readSettings();
+        const syncResult = await syncTopicsEditionToObsidian(settings, edition);
+        if (!syncResult.ok) {
+          console.error("[obsidian] Topics sync failed", syncResult.reason);
+        } else if (!syncResult.skipped) {
+          console.log(
+            `[obsidian] Synced ${syncResult.topicNotes} topics, ${syncResult.storyNotes} stories, ${syncResult.entityNotes} entities (${syncResult.skippedNotes} unchanged) to ${syncResult.vaultPath}`,
+          );
+        }
+      } catch (syncError) {
+        console.error(
+          "[obsidian] Topics sync error:",
+          syncError instanceof Error ? syncError.message : syncError,
+        );
+      }
       refreshMeta = { status: "idle" };
     } catch (error) {
       refreshMeta = {
@@ -340,6 +360,7 @@ function normalizeStory(value: unknown): TopicStory | null {
     normalizeSources(story.citations) ??
     normalizeSources(story.sourceHints);
   const sourceHints = asStringArray(story.sourceHints, 6);
+  const entities = normalizeEntities(story.entities);
   return {
     title,
     summary,
@@ -347,8 +368,43 @@ function normalizeStory(value: unknown): TopicStory | null {
     ...(asStringArray(story.bullets, 8) ? { bullets: asStringArray(story.bullets, 8) } : {}),
     ...(sources ? { sources } : {}),
     ...(!sources && sourceHints ? { sourceHints } : {}),
+    ...(entities ? { entities } : {}),
     ...(normalizeImage(story.image) ? { image: normalizeImage(story.image) } : {}),
   };
+}
+
+const ENTITY_KINDS = new Set(["person", "org", "place", "product", "other"]);
+
+function normalizeEntities(value: unknown): TopicEntity[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const seen = new Set<string>();
+  const out: TopicEntity[] = [];
+  for (const item of value) {
+    if (typeof item === "string") {
+      const name = item.trim().replace(/\s+/g, " ");
+      if (!name || name.length > 80) continue;
+      const key = name.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ name });
+      if (out.length >= 8) break;
+      continue;
+    }
+    if (!item || typeof item !== "object") continue;
+    const row = item as Record<string, unknown>;
+    const name = asString(row.name);
+    if (!name || name.length > 80) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const kindRaw = asString(row.kind).toLowerCase();
+    const kind = ENTITY_KINDS.has(kindRaw)
+      ? (kindRaw as TopicEntityKind)
+      : undefined;
+    out.push(kind ? { name, kind } : { name });
+    if (out.length >= 8) break;
+  }
+  return out.length > 0 ? out : undefined;
 }
 
 export function normalizeSection(topic: string, raw: unknown): TopicSection {
@@ -506,7 +562,7 @@ function jsonRepairPrompt(topic: string, parseError: string): string {
     "Return ONLY one corrected JSON object for that same topic.",
     "No markdown fences, no commentary.",
     "Use strict JSON: double quotes, commas between every array/object element, no trailing commas.",
-    "Keep the same schema (headline, dek, stories, figures) and the 3-day recency rules.",
+    "Keep the same schema (headline, dek, stories with entities, figures) and the 3-day recency rules.",
   ].join("\n");
 }
 
@@ -540,6 +596,9 @@ function briefingPrompt(topic: string): string {
     '      "sources": [',
     '        { "title": string, "url": https URL optional, "publisher": string optional }',
     "      ],",
+    '      "entities": [',
+    '        { "name": string, "kind": "person"|"org"|"place"|"product"|"other" optional }',
+    "      ] optional,",
     '      "image": { "url": https URL, "alt": string, "credit": string optional } optional',
     "    }",
     "  ],",
@@ -555,6 +614,7 @@ function briefingPrompt(topic: string): string {
     "- Include up to 8 distinct fresh stories covering different angles of the topic.",
     "- Every story MUST include publishedAt (YYYY-MM-DD) and 1 to 4 sources with real outlet names.",
     "- Prefer https urls for sources when you know a stable public page (news article, docs, blog). Omit url if unsure.",
+    "- Include 2 to 6 entities per story (people, orgs, products, places). Prefer canonical short names. Do not list publishers as entities unless they are the subject.",
     "- Include 2 to 4 figures with realistic numeric series when possible; figures may summarize the same 3-day window.",
     "- Image URLs must be public https links (Unsplash, Wikimedia, or similar). Omit image if unsure.",
     "- Keep the whole reply under 2800 words of JSON content.",

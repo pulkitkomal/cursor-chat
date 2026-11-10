@@ -41,6 +41,13 @@ export function SettingsPanel({ settings, saving, onSave, onDone }: Props) {
   const [useMemory, setUseMemory] = useState(settings.useMemory ?? false);
   const [loadUserMcp, setLoadUserMcp] = useState(settings.loadUserMcp);
   const [loadProjectMcp, setLoadProjectMcp] = useState(settings.loadProjectMcp);
+  const [obsidianEnabled, setObsidianEnabled] = useState(
+    settings.obsidianEnabled ?? false,
+  );
+  const [obsidianVault, setObsidianVault] = useState(settings.obsidianVault ?? "");
+  const [obsidianUseAsWorkspace, setObsidianUseAsWorkspace] = useState(
+    settings.obsidianUseAsWorkspace ?? false,
+  );
   const [apiKey, setApiKey] = useState("");
   const [clearKey, setClearKey] = useState(false);
   const [sessionToken, setSessionToken] = useState("");
@@ -62,6 +69,9 @@ export function SettingsPanel({ settings, saving, onSave, onDone }: Props) {
       useMemory,
       loadUserMcp,
       loadProjectMcp,
+      obsidianEnabled,
+      obsidianVault,
+      obsidianUseAsWorkspace,
       mcpServers: servers.filter((server) => server.name.trim()),
     };
     if (clearKey) payload.apiKey = null;
@@ -193,6 +203,44 @@ export function SettingsPanel({ settings, saving, onSave, onDone }: Props) {
               onChange={(event) => setDefaultModel(event.target.value)}
             />
           </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>Obsidian</legend>
+          <p className="hint">
+            Sync Topics editions into your vault as linked markdown under{" "}
+            <code>Brief/</code>. Obsidian Graph uses the wiki links.
+          </p>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={obsidianEnabled}
+              onChange={(event) => setObsidianEnabled(event.target.checked)}
+            />
+            Sync Topics to Obsidian
+          </label>
+          <label>
+            Vault path
+            <input
+              value={obsidianVault}
+              onChange={(event) => setObsidianVault(event.target.value)}
+              placeholder="/path/to/vault"
+              disabled={!obsidianEnabled}
+            />
+          </label>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={obsidianUseAsWorkspace}
+              onChange={(event) => setObsidianUseAsWorkspace(event.target.checked)}
+              disabled={!obsidianEnabled}
+            />
+            Use vault as chat workspace (agents can read Brief notes)
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>Reply style</legend>
           <label>
             Reply style guide
             <textarea

@@ -141,6 +141,16 @@ export function SavedIcon(props: IconProps) {
   );
 }
 
+export function ObsidianIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M6 4h9l3 4v12H6V4Z" />
+      <path d="M15 4v4h3" />
+      <path d="M9 12h6M9 15h4" />
+    </Icon>
+  );
+}
+
 export function MemoryIcon(props: IconProps) {
   return (
     <Icon {...props}>

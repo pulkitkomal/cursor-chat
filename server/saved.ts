@@ -2,7 +2,9 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import type { SavedStory } from "./types.ts";
+import type { SavedStory, TopicEntity, TopicEntityKind } from "./types.ts";
+
+const ENTITY_KINDS = new Set(["person", "org", "place", "product", "other"]);
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const dataDir = path.join(root, "data");
@@ -102,6 +104,41 @@ export function normalizeSavedInput(body: unknown): Omit<SavedStory, "id" | "sav
         .slice(0, 6)
     : undefined;
 
+  const entities = Array.isArray(value.entities)
+    ? (() => {
+        const seen = new Set<string>();
+        const out: TopicEntity[] = [];
+        for (const item of value.entities) {
+          if (typeof item === "string") {
+            const name = item.trim().replace(/\s+/g, " ");
+            if (!name || name.length > 80) continue;
+            const key = name.toLowerCase();
+            if (seen.has(key)) continue;
+            seen.add(key);
+            out.push({ name });
+            if (out.length >= 8) break;
+            continue;
+          }
+          if (!item || typeof item !== "object") continue;
+          const row = item as Record<string, unknown>;
+          const name =
+            typeof row.name === "string" ? row.name.trim().replace(/\s+/g, " ") : "";
+          if (!name || name.length > 80) continue;
+          const key = name.toLowerCase();
+          if (seen.has(key)) continue;
+          seen.add(key);
+          const kindRaw =
+            typeof row.kind === "string" ? row.kind.trim().toLowerCase() : "";
+          const kind = ENTITY_KINDS.has(kindRaw)
+            ? (kindRaw as TopicEntityKind)
+            : undefined;
+          out.push(kind ? { name, kind } : { name });
+          if (out.length >= 8) break;
+        }
+        return out;
+      })()
+    : undefined;
+
   return {
     topic,
     title,
@@ -109,6 +146,7 @@ export function normalizeSavedInput(body: unknown): Omit<SavedStory, "id" | "sav
     ...(bullets && bullets.length ? { bullets } : {}),
     ...(sources && sources.length ? { sources } : {}),
     ...(sourceHints && sourceHints.length ? { sourceHints } : {}),
+    ...(entities && entities.length ? { entities } : {}),
     ...(image ? { image } : {}),
   };
 }

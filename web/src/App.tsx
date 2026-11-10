@@ -29,6 +29,12 @@ export function App() {
   const [modelsWarning, setModelsWarning] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  /** Mobile drawer is mounted only while open/animating — a closed off-screen drawer steals taps on iOS. */
+  const [sidebarMounted, setSidebarMounted] = useState(false);
+  const [sidebarVisible, setSidebarVisible] = useState(false);
+  const [wideLayout, setWideLayout] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(min-width: 821px)").matches,
+  );
   const [needsAuth, setNeedsAuth] = useState(false);
   const [username, setUsername] = useState<string | null>(null);
   const [bootKey, setBootKey] = useState(0);
@@ -118,6 +124,36 @@ export function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 821px)");
+    const sync = () => setWideLayout(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+
+  useEffect(() => {
+    if (wideLayout) {
+      setSidebarMounted(true);
+      setSidebarVisible(true);
+      return;
+    }
+    if (sidebarOpen) {
+      setSidebarMounted(true);
+      let inner = 0;
+      const outer = window.requestAnimationFrame(() => {
+        inner = window.requestAnimationFrame(() => setSidebarVisible(true));
+      });
+      return () => {
+        window.cancelAnimationFrame(outer);
+        window.cancelAnimationFrame(inner);
+      };
+    }
+    setSidebarVisible(false);
+    const t = window.setTimeout(() => setSidebarMounted(false), 300);
+    return () => window.clearTimeout(t);
+  }, [sidebarOpen, wideLayout]);
 
   useEffect(() => {
     const viewport = window.visualViewport;
@@ -453,6 +489,7 @@ export function App() {
         modelsWarning={modelsWarning}
         hasApiKey={hasApiKey}
         useMemory={chat?.useMemory ?? settings?.useMemory ?? false}
+        obsidianEnabled={Boolean(settings?.obsidianEnabled)}
         onModelChange={setModel}
         onToggleMemory={() => void toggleMemory()}
         onSend={(text) => void onSend(text)}
@@ -491,8 +528,10 @@ export function App() {
     );
   }
 
+  const drawerOpen = wideLayout || sidebarVisible;
+
   return (
-    <div className={`app ${sidebarOpen ? "sidebar-open" : ""}`}>
+    <div className={`app ${drawerOpen ? "sidebar-open" : ""}`}>
       <div className="ambient" aria-hidden="true">
         <span className="orb orb-a" />
         <span className="orb orb-b" />
@@ -514,7 +553,7 @@ export function App() {
       >
         <PlusIcon width={16} height={16} />
       </button>
-      {sidebarOpen ? (
+      {!wideLayout && sidebarVisible ? (
         <button
           type="button"
           className="scrim"
@@ -522,36 +561,38 @@ export function App() {
           onClick={() => setSidebarOpen(false)}
         />
       ) : null}
-      <Sidebar
-        chats={chats}
-        activeId={activeId}
-        panel={panel}
-        onNew={() => void createChat()}
-        onSelect={(id) => void selectChat(id)}
-        onDelete={(id) => void removeChat(id)}
-        onRename={(id, title) => void renameChat(id, title)}
-        username={username}
-        onClose={() => setSidebarOpen(false)}
-        onLogout={username ? () => void onLogout() : undefined}
-        onOpenSettings={() => {
-          setPanel("settings");
-          setSidebarOpen(false);
-        }}
-        onOpenUsage={() => {
-          setPanel("usage");
-          setSidebarOpen(false);
-        }}
-        onOpenTopics={() => {
-          setPanel("topics");
-          setSidebarOpen(false);
-        }}
-        onOpenSaved={() => {
-          setPanel("saved");
-          setSidebarOpen(false);
-        }}
-        theme={theme}
-        onToggleTheme={toggleTheme}
-      />
+      {wideLayout || sidebarMounted ? (
+        <Sidebar
+          chats={chats}
+          activeId={activeId}
+          panel={panel}
+          onNew={() => void createChat()}
+          onSelect={(id) => void selectChat(id)}
+          onDelete={(id) => void removeChat(id)}
+          onRename={(id, title) => void renameChat(id, title)}
+          username={username}
+          onClose={wideLayout ? undefined : () => setSidebarOpen(false)}
+          onLogout={username ? () => void onLogout() : undefined}
+          onOpenSettings={() => {
+            setPanel("settings");
+            setSidebarOpen(false);
+          }}
+          onOpenUsage={() => {
+            setPanel("usage");
+            setSidebarOpen(false);
+          }}
+          onOpenTopics={() => {
+            setPanel("topics");
+            setSidebarOpen(false);
+          }}
+          onOpenSaved={() => {
+            setPanel("saved");
+            setSidebarOpen(false);
+          }}
+          theme={theme}
+          onToggleTheme={toggleTheme}
+        />
+      ) : null}
       <main className="panel-swap">{main}</main>
     </div>
   );

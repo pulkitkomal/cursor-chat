@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api } from "../api";
 import type {
+  ObsidianSyncStatus,
   TopicFigure,
   TopicSection,
   TopicSource,
@@ -268,6 +269,11 @@ export function TopicsPanel({ hasApiKey, onDone, onOpenSettings }: Props) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [syncingObsidian, setSyncingObsidian] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+  const [obsidianStatus, setObsidianStatus] = useState<ObsidianSyncStatus | null>(
+    null,
+  );
   const [savedKeys, setSavedKeys] = useState<Set<string>>(new Set());
 
   const pollRefresh = useCallback(async () => {
@@ -296,8 +302,13 @@ export function TopicsPanel({ hasApiKey, onDone, onOpenSettings }: Props) {
     setLoading(true);
     setError(null);
     try {
-      const [topics, saved] = await Promise.all([api.topics(), api.saved()]);
+      const [topics, saved, syncStatus] = await Promise.all([
+        api.topics(),
+        api.saved(),
+        api.obsidianStatus().catch(() => null),
+      ]);
       setState(topics);
+      setObsidianStatus(syncStatus);
       setSavedKeys(
         new Set(
           saved.items.map(
@@ -362,6 +373,31 @@ export function TopicsPanel({ hasApiKey, onDone, onOpenSettings }: Props) {
     await pollRefresh();
   }
 
+  async function syncObsidian() {
+    setSyncingObsidian(true);
+    setError(null);
+    setStatus(null);
+    try {
+      const result = await api.syncTopicsToObsidian();
+      if (result.status) setObsidianStatus(result.status);
+      else setObsidianStatus(await api.obsidianStatus().catch(() => null));
+      if (result.skipped) {
+        setError(result.reason || "Obsidian sync skipped");
+        return;
+      }
+      setStatus(
+        `Synced ${result.topicNotes} topics, ${result.storyNotes} stories` +
+          (result.entityNotes ? `, ${result.entityNotes} entities` : "") +
+          (result.skippedNotes ? ` (${result.skippedNotes} unchanged)` : "") +
+          " to Obsidian.",
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to sync to Obsidian");
+    } finally {
+      setSyncingObsidian(false);
+    }
+  }
+
   function addTopic(raw: string) {
     const topic = raw.trim().replace(/\s+/g, " ");
     if (!topic) return;
@@ -407,13 +443,24 @@ export function TopicsPanel({ hasApiKey, onDone, onOpenSettings }: Props) {
         </div>
         <div className="usage-header-actions">
           {!needsOnboarding ? (
-            <Button
-              variant="ghost"
-              disabled={refreshing || saving || interests.length === 0}
-              onClick={() => void runRefresh()}
-            >
-              {refreshing ? "Refreshing…" : "Refresh"}
-            </Button>
+            <>
+              <Button
+                variant="ghost"
+                disabled={
+                  syncingObsidian || refreshing || saving || !edition || storyTotal === 0
+                }
+                onClick={() => void syncObsidian()}
+              >
+                {syncingObsidian ? "Syncing…" : "Sync Obsidian"}
+              </Button>
+              <Button
+                variant="ghost"
+                disabled={refreshing || saving || interests.length === 0}
+                onClick={() => void runRefresh()}
+              >
+                {refreshing ? "Refreshing…" : "Refresh"}
+              </Button>
+            </>
           ) : null}
           {onDone ? (
             <Button variant="accent" onClick={onDone}>
@@ -424,6 +471,14 @@ export function TopicsPanel({ hasApiKey, onDone, onOpenSettings }: Props) {
       </header>
 
       {error ? <p className="error-line topics-error">{error}</p> : null}
+      {status ? <p className="hint topics-status">{status}</p> : null}
+      {obsidianStatus?.lastSuccessAt || obsidianStatus?.lastError ? (
+        <p className="hint topics-status">
+          {obsidianStatus.lastError
+            ? `Obsidian last error: ${obsidianStatus.lastError}`
+            : `Obsidian last sync: ${new Date(obsidianStatus.lastSuccessAt!).toLocaleString()}`}
+        </p>
+      ) : null}
 
       <div className="topics-scroll">
         {loading ? <p className="hint">Loading topics…</p> : null}

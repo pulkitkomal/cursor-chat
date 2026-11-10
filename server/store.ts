@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import type { AppSettings, ChatRecord, ChatSummary } from "./types.ts";
 import { ASD_STE100_SYSTEM_PROMPT } from "./ste100.ts";
+import { DEFAULT_OBSIDIAN_VAULT } from "./obsidian.ts";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const dataDir = path.join(root, "data");
@@ -21,6 +22,9 @@ const defaultSettings = (): AppSettings => ({
   loadUserMcp: false,
   loadProjectMcp: false,
   mcpServers: [],
+  obsidianEnabled: false,
+  obsidianVault: DEFAULT_OBSIDIAN_VAULT,
+  obsidianUseAsWorkspace: false,
 });
 
 async function ensureDirs() {
@@ -39,7 +43,24 @@ export async function readSettings(): Promise<AppSettings> {
   try {
     const raw = await readFile(settingsPath, "utf8");
     const parsed = JSON.parse(raw) as Partial<AppSettings>;
-    const merged = { ...defaultSettings(), ...parsed, mcpServers: parsed.mcpServers ?? [] };
+    const defaults = defaultSettings();
+    const merged: AppSettings = {
+      ...defaults,
+      ...parsed,
+      mcpServers: parsed.mcpServers ?? [],
+      obsidianEnabled:
+        typeof parsed.obsidianEnabled === "boolean"
+          ? parsed.obsidianEnabled
+          : defaults.obsidianEnabled,
+      obsidianVault:
+        typeof parsed.obsidianVault === "string" && parsed.obsidianVault.trim()
+          ? parsed.obsidianVault.trim()
+          : defaults.obsidianVault,
+      obsidianUseAsWorkspace:
+        typeof parsed.obsidianUseAsWorkspace === "boolean"
+          ? parsed.obsidianUseAsWorkspace
+          : defaults.obsidianUseAsWorkspace,
+    };
     if (merged.workspace) {
       try {
         await access(merged.workspace);

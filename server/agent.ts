@@ -1,5 +1,5 @@
 import { Agent, CursorAgentError, type SDKAgent } from "@cursor/sdk";
-import type { AppSettings, McpServerEntry, TokenUsage, ToolCallRecord } from "./types.ts";
+import type { AppSettings, TokenUsage, ToolCallRecord } from "./types.ts";
 
 type CachedAgent = {
   agent: SDKAgent;
@@ -16,7 +16,6 @@ export type AgentRuntimeOptions = {
   workspace: string;
   model: string;
   systemPrompt?: string;
-  mcpServers: Record<string, unknown>;
   settingSources: Array<"project" | "user" | "plugins" | "team" | "mdm" | "all">;
 };
 
@@ -31,42 +30,12 @@ export function resolveApiKey(settings: AppSettings): {
   return { source: "none" };
 }
 
-export function toSdkMcpServers(entries: McpServerEntry[]): Record<string, unknown> {
-  const servers: Record<string, unknown> = {};
-  for (const entry of entries) {
-    if (!entry.enabled || !entry.name.trim()) continue;
-    if (entry.type === "http") {
-      if (!entry.url.trim()) continue;
-      servers[entry.name] = {
-        type: "http",
-        url: entry.url,
-        ...(entry.headers && Object.keys(entry.headers).length > 0
-          ? { headers: entry.headers }
-          : {}),
-      };
-    } else {
-      if (!entry.command.trim()) continue;
-      servers[entry.name] = {
-        type: "stdio",
-        command: entry.command,
-        args: entry.args ?? [],
-        ...(entry.env && Object.keys(entry.env).length > 0 ? { env: entry.env } : {}),
-        ...(entry.cwd ? { cwd: entry.cwd } : {}),
-      };
-    }
-  }
-  return servers;
-}
-
 export function settingSourcesFor(
   settings: AppSettings,
   overrides?: { useMemory?: boolean },
 ): AgentRuntimeOptions["settingSources"] {
-  const sources: AgentRuntimeOptions["settingSources"] = [];
-  if (settings.loadProjectMcp) sources.push("project");
   const useMemory = overrides?.useMemory ?? settings.useMemory;
-  if (settings.loadUserMcp || useMemory) sources.push("user");
-  return sources;
+  return useMemory ? ["user"] : [];
 }
 
 function fingerprint(options: AgentRuntimeOptions): string {
@@ -74,7 +43,6 @@ function fingerprint(options: AgentRuntimeOptions): string {
     workspace: options.workspace,
     model: options.model,
     systemPrompt: options.systemPrompt ?? "",
-    mcpServers: options.mcpServers,
     settingSources: options.settingSources,
   });
 }
@@ -132,9 +100,6 @@ export async function acquireAgent(input: {
         ? { settingSources: input.options.settingSources }
         : {}),
     },
-    ...(Object.keys(input.options.mcpServers).length > 0
-      ? { mcpServers: input.options.mcpServers }
-      : {}),
     // Do not pass systemPrompt to the SDK. Many accounts reject custom
     // system prompts; reply style is applied as a message prefix instead.
   } as Parameters<typeof Agent.create>[0];

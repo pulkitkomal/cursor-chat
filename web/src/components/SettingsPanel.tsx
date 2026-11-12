@@ -1,8 +1,6 @@
 import { useState } from "react";
-import { api } from "../api";
-import type { McpServerEntry, Settings } from "../types";
+import type { Settings } from "../types";
 import { Button } from "./ui/Button";
-
 
 type Props = {
   settings: Settings;
@@ -13,34 +11,11 @@ type Props = {
   onDone?: () => void;
 };
 
-function emptyHttp(): McpServerEntry {
-  return { type: "http", name: "", enabled: true, url: "", headers: {} };
-}
-
-function emptyStdio(): McpServerEntry {
-  return { type: "stdio", name: "", enabled: true, command: "", args: [] };
-}
-
-function pairs(record?: Record<string, string>): [string, string][] {
-  const entries = Object.entries(record ?? {}) as [string, string][];
-  return entries.length > 0 ? entries : [["", ""]];
-}
-
-function toRecord(rows: [string, string][]) {
-  const record: Record<string, string> = {};
-  for (const [key, value] of rows) {
-    if (key.trim()) record[key.trim()] = value;
-  }
-  return record;
-}
-
 export function SettingsPanel({ settings, saving, onSave, onDone }: Props) {
   const [workspace, setWorkspace] = useState(settings.workspace);
   const [defaultModel, setDefaultModel] = useState(settings.defaultModel);
   const [systemPrompt, setSystemPrompt] = useState(settings.systemPrompt ?? "");
   const [useMemory, setUseMemory] = useState(settings.useMemory ?? false);
-  const [loadUserMcp, setLoadUserMcp] = useState(settings.loadUserMcp);
-  const [loadProjectMcp, setLoadProjectMcp] = useState(settings.loadProjectMcp);
   const [obsidianEnabled, setObsidianEnabled] = useState(
     settings.obsidianEnabled ?? false,
   );
@@ -52,13 +27,7 @@ export function SettingsPanel({ settings, saving, onSave, onDone }: Props) {
   const [clearKey, setClearKey] = useState(false);
   const [sessionToken, setSessionToken] = useState("");
   const [clearSession, setClearSession] = useState(false);
-  const [servers, setServers] = useState<McpServerEntry[]>(settings.mcpServers);
   const [message, setMessage] = useState<string | null>(null);
-  const [mcpTest, setMcpTest] = useState<Record<number, string>>({});
-
-  function updateServer(index: number, next: McpServerEntry) {
-    setServers((current) => current.map((server, i) => (i === index ? next : server)));
-  }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -67,12 +36,9 @@ export function SettingsPanel({ settings, saving, onSave, onDone }: Props) {
       defaultModel,
       systemPrompt,
       useMemory,
-      loadUserMcp,
-      loadProjectMcp,
       obsidianEnabled,
       obsidianVault,
       obsidianUseAsWorkspace,
-      mcpServers: servers.filter((server) => server.name.trim()),
     };
     if (clearKey) payload.apiKey = null;
     else if (apiKey.trim()) payload.apiKey = apiKey.trim();
@@ -84,27 +50,9 @@ export function SettingsPanel({ settings, saving, onSave, onDone }: Props) {
       setClearKey(false);
       setSessionToken("");
       setClearSession(false);
-      setMessage("Saved. The next message will use these MCP servers.");
+      setMessage("Saved.");
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Save failed");
-    }
-  }
-
-  async function testServer(index: number, server: McpServerEntry) {
-    setMcpTest((current) => ({ ...current, [index]: "Testing…" }));
-    try {
-      const result = await api.testMcp(server);
-      setMcpTest((current) => ({
-        ...current,
-        [index]: result.ok
-          ? result.message || "OK"
-          : result.error || result.message || "Failed",
-      }));
-    } catch (err) {
-      setMcpTest((current) => ({
-        ...current,
-        [index]: err instanceof Error ? err.message : "Test failed",
-      }));
     }
   }
 
@@ -235,7 +183,10 @@ export function SettingsPanel({ settings, saving, onSave, onDone }: Props) {
               onChange={(event) => setObsidianUseAsWorkspace(event.target.checked)}
               disabled={!obsidianEnabled}
             />
-            Use vault as chat workspace (agents can read Brief notes)
+            <span>
+              Default Vault on for new chats (agent cwd = Obsidian vault so Brief notes are
+              readable)
+            </span>
           </label>
         </fieldset>
 
@@ -257,7 +208,7 @@ export function SettingsPanel({ settings, saving, onSave, onDone }: Props) {
         </fieldset>
 
         <fieldset>
-          <legend>Memory & MCP sources</legend>
+          <legend>Memory</legend>
           <label className="check">
             <input
               type="checkbox"
@@ -269,157 +220,6 @@ export function SettingsPanel({ settings, saving, onSave, onDone }: Props) {
               <code>settingSources: user</code>)
             </span>
           </label>
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={loadProjectMcp}
-              onChange={(event) => setLoadProjectMcp(event.target.checked)}
-            />
-            <span>
-              Load project servers from <code>.cursor/mcp.json</code>
-            </span>
-          </label>
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={loadUserMcp}
-              onChange={(event) => setLoadUserMcp(event.target.checked)}
-            />
-            <span>
-              Load user servers from <code>~/.cursor/mcp.json</code>
-            </span>
-          </label>
-        </fieldset>
-
-        <fieldset className="mcp-list">
-          <legend>Inline MCP servers</legend>
-          <p className="hint">
-            These are passed into <code>Agent.create</code> and again on <code>Agent.resume</code>.
-            Inline servers are not persisted by the SDK.
-          </p>
-          {servers.map((server, index) => (
-            <article key={`${server.type}-${index}`} className="mcp-card">
-              <div className="mcp-head">
-                <label className="check">
-                  <input
-                    type="checkbox"
-                    checked={server.enabled}
-                    onChange={(event) =>
-                      updateServer(index, { ...server, enabled: event.target.checked })
-                    }
-                  />
-                  Enabled
-                </label>
-                <select
-                  value={server.type}
-                  onChange={(event) => {
-                    const type = event.target.value as McpServerEntry["type"];
-                    updateServer(
-                      index,
-                      type === "http"
-                        ? { ...emptyHttp(), name: server.name, enabled: server.enabled }
-                        : { ...emptyStdio(), name: server.name, enabled: server.enabled },
-                    );
-                  }}
-                >
-                  <option value="http">HTTP</option>
-                  <option value="stdio">stdio</option>
-                </select>
-                <button
-                  type="button"
-                  className="ghost"
-                  onClick={() => void testServer(index, server)}
-                >
-                  Test
-                </button>
-                <button
-                  type="button"
-                  className="ghost danger"
-                  onClick={() => setServers((current) => current.filter((_, i) => i !== index))}
-                >
-                  Remove
-                </button>
-              </div>
-              {mcpTest[index] ? <p className="hint">{mcpTest[index]}</p> : null}
-              <label>
-                Name
-                <input
-                  value={server.name}
-                  onChange={(event) => updateServer(index, { ...server, name: event.target.value })}
-                  placeholder="docs"
-                />
-              </label>
-              {server.type === "http" ? (
-                <>
-                  <label>
-                    URL
-                    <input
-                      value={server.url}
-                      onChange={(event) =>
-                        updateServer(index, { ...server, url: event.target.value })
-                      }
-                      placeholder="https://example.com/mcp"
-                    />
-                  </label>
-                  <KeyValue
-                    label="Headers"
-                    rows={pairs(server.headers)}
-                    onChange={(rows) =>
-                      updateServer(index, { ...server, headers: toRecord(rows) })
-                    }
-                  />
-                </>
-              ) : (
-                <>
-                  <label>
-                    Command
-                    <input
-                      value={server.command}
-                      onChange={(event) =>
-                        updateServer(index, { ...server, command: event.target.value })
-                      }
-                      placeholder="npx"
-                    />
-                  </label>
-                  <label>
-                    Args (space-separated)
-                    <input
-                      value={(server.args ?? []).join(" ")}
-                      onChange={(event) =>
-                        updateServer(index, {
-                          ...server,
-                          args: event.target.value.split(/\s+/).filter(Boolean),
-                        })
-                      }
-                      placeholder="-y @modelcontextprotocol/server-filesystem ."
-                    />
-                  </label>
-                  <label>
-                    Server cwd
-                    <input
-                      value={server.cwd ?? ""}
-                      onChange={(event) =>
-                        updateServer(index, { ...server, cwd: event.target.value || undefined })
-                      }
-                    />
-                  </label>
-                  <KeyValue
-                    label="Env"
-                    rows={pairs(server.env)}
-                    onChange={(rows) => updateServer(index, { ...server, env: toRecord(rows) })}
-                  />
-                </>
-              )}
-            </article>
-          ))}
-          <div className="row">
-            <button type="button" className="ghost" onClick={() => setServers((s) => [...s, emptyHttp()])}>
-              Add HTTP server
-            </button>
-            <button type="button" className="ghost" onClick={() => setServers((s) => [...s, emptyStdio()])}>
-              Add stdio server
-            </button>
-          </div>
         </fieldset>
 
         <div className="row">
@@ -430,57 +230,5 @@ export function SettingsPanel({ settings, saving, onSave, onDone }: Props) {
         </div>
       </form>
     </section>
-  );
-}
-
-function KeyValue({
-  label,
-  rows,
-  onChange,
-}: {
-  label: string;
-  rows: [string, string][];
-  onChange: (rows: [string, string][]) => void;
-}) {
-  return (
-    <div className="kv">
-      <span>{label}</span>
-      {rows.map(([key, value], index) => (
-        <div key={index} className="kv-row">
-          <input
-            placeholder="name"
-            value={key}
-            onChange={(event) => {
-              const next = [...rows] as [string, string][];
-              next[index] = [event.target.value, value];
-              onChange(next);
-            }}
-          />
-          <input
-            placeholder="value"
-            value={value}
-            onChange={(event) => {
-              const next = [...rows] as [string, string][];
-              next[index] = [key, event.target.value];
-              onChange(next);
-            }}
-          />
-          <button
-            type="button"
-            className="ghost"
-            onClick={() => onChange(rows.filter((_, i) => i !== index))}
-          >
-            ×
-          </button>
-        </div>
-      ))}
-      <button
-        type="button"
-        className="ghost"
-        onClick={() => onChange([...rows, ["", ""] as [string, string]])}
-      >
-        Add pair
-      </button>
-    </div>
   );
 }

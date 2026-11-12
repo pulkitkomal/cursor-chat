@@ -18,9 +18,11 @@ type Props = {
   modelsWarning?: string | null;
   hasApiKey: boolean;
   useMemory: boolean;
+  useObsidianWorkspace: boolean;
   obsidianEnabled: boolean;
   onModelChange: (model: string) => void;
   onToggleMemory: () => void;
+  onToggleObsidianWorkspace: () => void;
   onSend: (text: string) => void;
   onStop: () => void;
   onRetry?: () => void;
@@ -98,9 +100,9 @@ function MessageView({ message, streaming }: { message: ChatMessage; streaming?:
 }
 
 const suggestions = [
-  "What can you do with the MCP tools I configured?",
   "Summarize this workspace in a few sentences.",
   "Help me plan a feature, then list the files you'd touch.",
+  "What should I work on next?",
 ];
 
 function safeJson(value: unknown) {
@@ -121,9 +123,11 @@ export function ChatView({
   modelsWarning,
   hasApiKey,
   useMemory,
+  useObsidianWorkspace,
   obsidianEnabled,
   onModelChange,
   onToggleMemory,
+  onToggleObsidianWorkspace,
   onSend,
   onStop,
   onRetry,
@@ -190,22 +194,39 @@ export function ChatView({
               </span>
             ) : null}
             {obsidianEnabled ? (
-              <button
-                type="button"
-                className="memory-toggle"
-                disabled={!canAddToObsidian || obsidianState === "saving"}
-                title="Save this whole chat into Obsidian"
-                onClick={() => void addChatToObsidian()}
-              >
-                <ObsidianIcon width={14} height={14} />
-                {obsidianState === "saving"
-                  ? "Adding…"
-                  : obsidianState === "saved"
-                    ? "Added"
-                    : obsidianState === "error"
-                      ? "Failed"
-                      : "Add to Obsidian"}
-              </button>
+              <>
+                <button
+                  type="button"
+                  className={`memory-toggle ${useObsidianWorkspace ? "on" : ""}`}
+                  disabled={!chat || streaming}
+                  aria-pressed={useObsidianWorkspace}
+                  title={
+                    useObsidianWorkspace
+                      ? "Vault on — agent cwd is the Obsidian vault (Brief notes readable)"
+                      : "Vault off — agent uses the normal workspace"
+                  }
+                  onClick={onToggleObsidianWorkspace}
+                >
+                  <ObsidianIcon width={14} height={14} />
+                  Vault
+                </button>
+                <button
+                  type="button"
+                  className="memory-toggle"
+                  disabled={!canAddToObsidian || obsidianState === "saving"}
+                  title="Save this whole chat into Obsidian"
+                  onClick={() => void addChatToObsidian()}
+                >
+                  <ObsidianIcon width={14} height={14} />
+                  {obsidianState === "saving"
+                    ? "Adding…"
+                    : obsidianState === "saved"
+                      ? "Added"
+                      : obsidianState === "error"
+                        ? "Failed"
+                        : "Add to Obsidian"}
+                </button>
+              </>
             ) : null}
             <button
               type="button"
@@ -235,7 +256,7 @@ export function ChatView({
         {empty ? (
           <EmptyState
             title="Ask clearly. Get a brief answer."
-            description="History stays on this device. Agents and MCP stay attached to each chat."
+            description="History stays on this device. Agents stay attached to each chat."
           >
             {!hasApiKey ? (
               <button type="button" className="banner" onClick={onOpenSettings}>

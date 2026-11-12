@@ -1,7 +1,6 @@
 import type {
   Chat,
   ChatSummary,
-  McpServerEntry,
   ModelOption,
   SavedStory,
   Settings,
@@ -128,11 +127,6 @@ export const api = {
       body: JSON.stringify(story),
     }),
   unsaveStory: (id: string) => request<void>(`/api/saved/${id}`, { method: "DELETE" }),
-  testMcp: (server: McpServerEntry) =>
-    request<{ ok: boolean; status?: number; message?: string; error?: string }>(
-      "/api/mcp/test",
-      { method: "POST", body: JSON.stringify(server) },
-    ),
   chats: () => request<{ chats: ChatSummary[] }>("/api/chats"),
   createChat: () => request<Chat>("/api/chats", { method: "POST" }),
   chat: (id: string) => request<Chat>(`/api/chats/${id}`),
@@ -140,6 +134,11 @@ export const api = {
     request<Chat>(`/api/chats/${id}`, { method: "PATCH", body: JSON.stringify({ title }) }),
   setChatMemory: (id: string, useMemory: boolean) =>
     request<Chat>(`/api/chats/${id}`, { method: "PATCH", body: JSON.stringify({ useMemory }) }),
+  setChatObsidianWorkspace: (id: string, useObsidianWorkspace: boolean) =>
+    request<Chat>(`/api/chats/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ useObsidianWorkspace }),
+    }),
   deleteChat: (id: string) => request<void>(`/api/chats/${id}`, { method: "DELETE" }),
   cancel: (id: string) =>
     request<{ ok: boolean }>(`/api/chats/${id}/cancel`, { method: "POST" }),

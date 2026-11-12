@@ -19,9 +19,6 @@ const defaultSettings = (): AppSettings => ({
   defaultModel: "auto",
   systemPrompt: ASD_STE100_SYSTEM_PROMPT,
   useMemory: false,
-  loadUserMcp: false,
-  loadProjectMcp: false,
-  mcpServers: [],
   obsidianEnabled: false,
   obsidianVault: DEFAULT_OBSIDIAN_VAULT,
   obsidianUseAsWorkspace: false,
@@ -45,9 +42,17 @@ export async function readSettings(): Promise<AppSettings> {
     const parsed = JSON.parse(raw) as Partial<AppSettings>;
     const defaults = defaultSettings();
     const merged: AppSettings = {
-      ...defaults,
-      ...parsed,
-      mcpServers: parsed.mcpServers ?? [],
+      workspace:
+        typeof parsed.workspace === "string" && parsed.workspace.trim()
+          ? parsed.workspace.trim()
+          : defaults.workspace,
+      defaultModel:
+        typeof parsed.defaultModel === "string" && parsed.defaultModel.trim()
+          ? parsed.defaultModel.trim()
+          : defaults.defaultModel,
+      systemPrompt:
+        typeof parsed.systemPrompt === "string" ? parsed.systemPrompt : defaults.systemPrompt,
+      useMemory: typeof parsed.useMemory === "boolean" ? parsed.useMemory : defaults.useMemory,
       obsidianEnabled:
         typeof parsed.obsidianEnabled === "boolean"
           ? parsed.obsidianEnabled
@@ -61,6 +66,12 @@ export async function readSettings(): Promise<AppSettings> {
           ? parsed.obsidianUseAsWorkspace
           : defaults.obsidianUseAsWorkspace,
     };
+    if (typeof parsed.apiKey === "string" && parsed.apiKey.trim()) {
+      merged.apiKey = parsed.apiKey.trim();
+    }
+    if (typeof parsed.sessionToken === "string" && parsed.sessionToken.trim()) {
+      merged.sessionToken = parsed.sessionToken.trim();
+    }
     if (merged.workspace) {
       try {
         await access(merged.workspace);
@@ -129,7 +140,7 @@ export async function deleteChat(id: string): Promise<boolean> {
 
 export async function createChat(
   model: string,
-  options?: { useMemory?: boolean },
+  options?: { useMemory?: boolean; useObsidianWorkspace?: boolean },
 ): Promise<ChatRecord> {
   const now = Date.now();
   const chat: ChatRecord = {
@@ -137,6 +148,7 @@ export async function createChat(
     title: "New chat",
     model,
     useMemory: options?.useMemory ?? false,
+    useObsidianWorkspace: options?.useObsidianWorkspace ?? false,
     createdAt: now,
     updatedAt: now,
     messages: [],

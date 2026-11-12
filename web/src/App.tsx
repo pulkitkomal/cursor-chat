@@ -263,6 +263,28 @@ export function App() {
     }
   }
 
+  async function toggleObsidianWorkspace() {
+    if (!chat) return;
+    const next = !(chat.useObsidianWorkspace ?? settings?.obsidianUseAsWorkspace ?? false);
+    try {
+      const updated = await api.setChatObsidianWorkspace(chat.id, next);
+      setChat(updated);
+      setChats((current) =>
+        current.map((item) =>
+          item.id === updated.id
+            ? { ...item, useObsidianWorkspace: updated.useObsidianWorkspace }
+            : item,
+        ),
+      );
+    } catch (err) {
+      if (err instanceof AuthRequiredError) {
+        setNeedsAuth(true);
+        return;
+      }
+      setError(err instanceof Error ? err.message : "Failed to update Obsidian workspace");
+    }
+  }
+
   function applyEvent(event: StreamEvent, current: Chat): Chat {
     const next = { ...current, messages: [...current.messages] };
     const last = next.messages.at(-1);
@@ -489,9 +511,13 @@ export function App() {
         modelsWarning={modelsWarning}
         hasApiKey={hasApiKey}
         useMemory={chat?.useMemory ?? settings?.useMemory ?? false}
+        useObsidianWorkspace={
+          chat?.useObsidianWorkspace ?? settings?.obsidianUseAsWorkspace ?? false
+        }
         obsidianEnabled={Boolean(settings?.obsidianEnabled)}
         onModelChange={setModel}
         onToggleMemory={() => void toggleMemory()}
+        onToggleObsidianWorkspace={() => void toggleObsidianWorkspace()}
         onSend={(text) => void onSend(text)}
         onStop={() => void onStop()}
         onRetry={() => {

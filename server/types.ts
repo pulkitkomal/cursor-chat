@@ -1,23 +1,3 @@
-export type HttpMcpServer = {
-  type: "http";
-  name: string;
-  enabled: boolean;
-  url: string;
-  headers?: Record<string, string>;
-};
-
-export type StdioMcpServer = {
-  type: "stdio";
-  name: string;
-  enabled: boolean;
-  command: string;
-  args?: string[];
-  env?: Record<string, string>;
-  cwd?: string;
-};
-
-export type McpServerEntry = HttpMcpServer | StdioMcpServer;
-
 export type AppSettings = {
   apiKey?: string;
   /** Optional WorkosCursorSessionToken for dashboard quota/usage-summary. */
@@ -27,14 +7,11 @@ export type AppSettings = {
   systemPrompt?: string;
   /** Load Cursor user settingSources (memories/rules) into local agents. */
   useMemory: boolean;
-  loadUserMcp: boolean;
-  loadProjectMcp: boolean;
-  mcpServers: McpServerEntry[];
   /** Write Topics editions into an Obsidian vault as linked markdown. */
   obsidianEnabled: boolean;
   /** Absolute path to the Obsidian vault root on this machine. */
   obsidianVault: string;
-  /** When true, chat/Topics agents use the Obsidian vault as their local cwd. */
+  /** Default for new chats: use the Obsidian vault as agent cwd. */
   obsidianUseAsWorkspace: boolean;
 };
 
@@ -72,6 +49,8 @@ export type ChatRecord = {
   model: string;
   /** When set, overrides AppSettings.useMemory for this chat. */
   useMemory?: boolean;
+  /** When set, overrides AppSettings.obsidianUseAsWorkspace for this chat. */
+  useObsidianWorkspace?: boolean;
   createdAt: number;
   updatedAt: number;
   messages: ChatMessage[];

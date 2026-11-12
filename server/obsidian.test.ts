@@ -8,6 +8,7 @@ import {
   renderChatNote,
   renderStoryNote,
   renderTopicNote,
+  resolveAgentWorkspace,
   slugifyFilename,
   stableContentHash,
   storyNoteId,
@@ -20,17 +21,44 @@ import type { AppSettings, TopicsEdition } from "./types.ts";
 
 function settingsFor(vault: string, enabled = true): AppSettings {
   return {
-    workspace: vault,
+    workspace: path.join(vault, "..", "workspace"),
     defaultModel: "auto",
     useMemory: false,
-    loadUserMcp: false,
-    loadProjectMcp: false,
-    mcpServers: [],
     obsidianEnabled: enabled,
     obsidianVault: vault,
     obsidianUseAsWorkspace: false,
   };
 }
+
+describe("resolveAgentWorkspace", () => {
+  it("uses vault when enabled and override/default request it", () => {
+    const settings = settingsFor("/vault", true);
+    assert.equal(resolveAgentWorkspace(settings), settings.workspace);
+    assert.equal(
+      resolveAgentWorkspace({ ...settings, obsidianUseAsWorkspace: true }),
+      "/vault",
+    );
+    assert.equal(
+      resolveAgentWorkspace(settings, { useObsidianWorkspace: true }),
+      "/vault",
+    );
+    assert.equal(
+      resolveAgentWorkspace(
+        { ...settings, obsidianUseAsWorkspace: true },
+        { useObsidianWorkspace: false },
+      ),
+      settings.workspace,
+    );
+  });
+
+  it("ignores vault override when Obsidian sync is disabled", () => {
+    const settings = settingsFor("/vault", false);
+    assert.equal(
+      resolveAgentWorkspace(settings, { useObsidianWorkspace: true }),
+      settings.workspace,
+    );
+  });
+});
 
 describe("obsidian note helpers", () => {
   it("slugifyFilename strips path-unsafe characters", () => {

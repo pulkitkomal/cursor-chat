@@ -1,31 +1,8 @@
-export type HttpMcpServer = {
-  type: "http";
-  name: string;
-  enabled: boolean;
-  url: string;
-  headers?: Record<string, string>;
-};
-
-export type StdioMcpServer = {
-  type: "stdio";
-  name: string;
-  enabled: boolean;
-  command: string;
-  args?: string[];
-  env?: Record<string, string>;
-  cwd?: string;
-};
-
-export type McpServerEntry = HttpMcpServer | StdioMcpServer;
-
 export type Settings = {
   workspace: string;
   defaultModel: string;
   systemPrompt?: string;
   useMemory: boolean;
-  loadUserMcp: boolean;
-  loadProjectMcp: boolean;
-  mcpServers: McpServerEntry[];
   obsidianEnabled: boolean;
   obsidianVault: string;
   obsidianUseAsWorkspace: boolean;
@@ -67,6 +44,7 @@ export type ChatSummary = {
   agentId?: string;
   model: string;
   useMemory?: boolean;
+  useObsidianWorkspace?: boolean;
   createdAt: number;
   updatedAt: number;
 };

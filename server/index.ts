@@ -13,7 +13,6 @@ import {
   disposeChatAgent,
   resolveApiKey,
   settingSourcesFor,
-  toSdkMcpServers,
   toolName,
   upsertTool,
 } from "./agent.ts";
@@ -27,7 +26,7 @@ import {
   writeChat,
   writeSettings,
 } from "./store.ts";
-import type { AppSettings, ChatMessage, McpServerEntry, ToolCallRecord } from "./types.ts";
+import type { AppSettings, ChatMessage, ToolCallRecord } from "./types.ts";
 import {
   authEnabled,
   loginHandler,
@@ -78,7 +77,7 @@ function sendSse(res: express.Response, event: string, data: unknown) {
 async function runtimeFromSettings(
   settings: AppSettings,
   model: string,
-  overrides?: { useMemory?: boolean },
+  overrides?: { useMemory?: boolean; useObsidianWorkspace?: boolean },
 ) {
   const { apiKey, source } = resolveApiKey(settings);
   if (!apiKey) {
@@ -88,7 +87,9 @@ async function runtimeFromSettings(
     (error as Error & { status: number }).status = 401;
     throw error;
   }
-  const workspace = resolveAgentWorkspace(settings);
+  const workspace = resolveAgentWorkspace(settings, {
+    useObsidianWorkspace: overrides?.useObsidianWorkspace,
+  });
   await mkdir(workspace, { recursive: true });
   return {
     apiKey,
@@ -98,7 +99,6 @@ async function runtimeFromSettings(
       workspace,
       model,
       systemPrompt: settings.systemPrompt,
-      mcpServers: toSdkMcpServers(settings.mcpServers),
       settingSources: settingSourcesFor(settings, overrides),
     },
   };
@@ -154,14 +154,7 @@ app.put("/api/settings", async (req, res) => {
         : current.defaultModel,
     systemPrompt:
       typeof body.systemPrompt === "string" ? body.systemPrompt : current.systemPrompt,
-    loadUserMcp:
-      typeof body.loadUserMcp === "boolean" ? body.loadUserMcp : current.loadUserMcp,
-    loadProjectMcp:
-      typeof body.loadProjectMcp === "boolean"
-        ? body.loadProjectMcp
-        : current.loadProjectMcp,
     useMemory: typeof body.useMemory === "boolean" ? body.useMemory : current.useMemory,
-    mcpServers: Array.isArray(body.mcpServers) ? body.mcpServers : current.mcpServers,
     obsidianEnabled:
       typeof body.obsidianEnabled === "boolean"
         ? body.obsidianEnabled
@@ -197,77 +190,6 @@ app.get("/api/usage", async (_req, res) => {
   } catch (error) {
     res.status(500).json({
       error: error instanceof Error ? error.message : "Failed to load usage",
-    });
-  }
-});
-
-app.post("/api/mcp/test", async (req, res) => {
-  const entry = req.body as McpServerEntry;
-  if (!entry?.name?.trim()) {
-    res.status(400).json({ ok: false, error: "Server name is required" });
-    return;
-  }
-  try {
-    if (entry.type === "http") {
-      if (!entry.url?.trim()) {
-        res.status(400).json({ ok: false, error: "URL is required" });
-        return;
-      }
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 8000);
-      const response = await fetch(entry.url, {
-        method: "GET",
-        headers: entry.headers,
-        signal: controller.signal,
-      }).finally(() => clearTimeout(timer));
-      res.json({
-        ok: response.ok || response.status === 405 || response.status === 406,
-        status: response.status,
-        message: response.ok
-          ? `Reached ${entry.url}`
-          : `HTTP ${response.status} from ${entry.url}`,
-      });
-      return;
-    }
-    if (!entry.command?.trim()) {
-      res.status(400).json({ ok: false, error: "Command is required" });
-      return;
-    }
-    const { spawn } = await import("node:child_process");
-    const result = await new Promise<{ ok: boolean; message: string }>((resolve) => {
-      let settled = false;
-      const finish = (value: { ok: boolean; message: string }) => {
-        if (settled) return;
-        settled = true;
-        resolve(value);
-      };
-      const child = spawn(entry.command, entry.args ?? [], {
-        env: { ...process.env, ...(entry.env ?? {}) },
-        cwd: entry.cwd || undefined,
-        stdio: "ignore",
-      });
-      const timer = setTimeout(() => {
-        child.kill("SIGTERM");
-        finish({ ok: true, message: `Started ${entry.command} (timed probe)` });
-      }, 1500);
-      child.on("error", (error) => {
-        clearTimeout(timer);
-        finish({ ok: false, message: error.message });
-      });
-      child.on("exit", (code) => {
-        clearTimeout(timer);
-        if (code === 0 || code === null) {
-          finish({ ok: true, message: `Command ${entry.command} exited cleanly` });
-        } else {
-          finish({ ok: false, message: `Command exited with code ${code}` });
-        }
-      });
-    });
-    res.json(result);
-  } catch (error) {
-    res.status(500).json({
-      ok: false,
-      error: error instanceof Error ? error.message : "MCP test failed",
     });
   }
 });
@@ -467,7 +389,10 @@ app.get("/api/chats", async (_req, res) => {
 
 app.post("/api/chats", async (_req, res) => {
   const settings = await readSettings();
-  const chat = await createChat(settings.defaultModel, { useMemory: settings.useMemory });
+  const chat = await createChat(settings.defaultModel, {
+    useMemory: settings.useMemory,
+    useObsidianWorkspace: settings.obsidianEnabled && settings.obsidianUseAsWorkspace,
+  });
   res.status(201).json(chat);
 });
 
@@ -496,6 +421,11 @@ app.patch("/api/chats/:id", async (req, res) => {
     changed = true;
     await disposeChatAgent(chat.id);
   }
+  if (typeof req.body?.useObsidianWorkspace === "boolean") {
+    chat.useObsidianWorkspace = req.body.useObsidianWorkspace;
+    changed = true;
+    await disposeChatAgent(chat.id);
+  }
   if (changed) {
     chat.updatedAt = Date.now();
     await writeChat(chat);
@@ -513,8 +443,11 @@ app.delete("/api/chats/:id", async (req, res) => {
   await disposeChatAgent(chat.id);
   if (chat.agentId) {
     try {
+      const settings = await readSettings();
       await Agent.delete(chat.agentId, {
-        cwd: resolveAgentWorkspace(await readSettings()),
+        cwd: resolveAgentWorkspace(settings, {
+          useObsidianWorkspace: chat.useObsidianWorkspace ?? settings.obsidianUseAsWorkspace,
+        }),
       });
     } catch {
       // local store may already be gone
@@ -596,6 +529,7 @@ app.post("/api/chats/:id/messages", async (req, res) => {
   try {
     const runtime = await runtimeFromSettings(settings, model, {
       useMemory: chat.useMemory ?? settings.useMemory,
+      useObsidianWorkspace: chat.useObsidianWorkspace ?? settings.obsidianUseAsWorkspace,
     });
     const agent = await acquireAgent({
       chatId: chat.id,

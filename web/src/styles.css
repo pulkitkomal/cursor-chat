@@ -1567,8 +1567,7 @@ html[data-theme="light"] .model-menu.glass {
 }
 
 .field,
-.settings label,
-.kv {
+.settings label {
   display: grid;
   gap: 4px;
   font-size: 13px;
@@ -1577,8 +1576,7 @@ html[data-theme="light"] .model-menu.glass {
 }
 
 .field:last-child,
-.settings label:last-child,
-.kv:last-child {
+.settings label:last-child {
   border-bottom: 0;
 }
 
@@ -1618,22 +1616,6 @@ html[data-theme="light"] .model-menu.glass {
   accent-color: var(--accent);
 }
 
-.mcp-card {
-  display: grid;
-  gap: 0;
-  margin: 8px;
-  border-radius: 12px;
-  background: rgba(0, 0, 0, 0.22);
-  border: 1px solid var(--line);
-  height: auto;
-  overflow: visible;
-}
-
-.settings fieldset .mcp-list,
-.settings .mcp-list {
-  min-width: 0;
-}
-
 .settings .actions {
   display: flex;
   flex-wrap: wrap;
@@ -1641,24 +1623,12 @@ html[data-theme="light"] .model-menu.glass {
   padding: 4px 0 8px;
 }
 
-.mcp-head,
-.row,
-.kv-row {
+.row {
   display: flex;
   gap: 8px;
   align-items: center;
   flex-wrap: wrap;
   padding: 8px 10px;
-}
-
-.mcp-head select {
-  width: auto;
-  min-width: 100px;
-}
-
-.kv-row input {
-  flex: 1;
-  min-width: 0;
 }
 
 .primary {
@@ -2019,6 +1989,15 @@ html[data-theme="light"] .login-notices {
   .app > .scrim {
     grid-column: 1;
     grid-row: 1;
+  }
+
+  /* Beat .app > .sidebar { z-index: 2 } so the drawer sits above the scrim */
+  .app > .scrim {
+    z-index: 4;
+  }
+
+  .app > .sidebar {
+    z-index: 5;
   }
 
   .app > main {

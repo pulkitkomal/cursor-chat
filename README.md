@@ -2,7 +2,7 @@
 
 # Brief
 
-A ChatGPT-style local agent chat app backed by the [Cursor TypeScript SDK](https://cursor.com/docs/sdk/typescript). Each conversation is a durable local `Agent`. Follow-ups call `Agent.resume`, so history survives restarts. MCP servers configured in Settings are passed on every create and resume.
+A ChatGPT-style local agent chat app backed by the [Cursor TypeScript SDK](https://cursor.com/docs/sdk/typescript). Each conversation is a durable local `Agent`. Follow-ups call `Agent.resume`, so history survives restarts.
 
 **Live:** [https://brief.k4mik4ge.xyz](https://brief.k4mik4ge.xyz)
 
@@ -12,11 +12,12 @@ A ChatGPT-style local agent chat app backed by the [Cursor TypeScript SDK](https
 - Streaming answers, thinking, and expandable tool-call chips
 - Usage tab: Cursor account, local token totals, optional plan quota
 - Model picker from `Cursor.models.list()`
-- HTTP and stdio MCP servers, plus optional `~/.cursor/mcp.json` / `.cursor/mcp.json`
 - Local workspace for file tools (`data/workspace` by default)
+- Optional Memory toggle to load Cursor user memories/rules per chat
+- Optional Vault toggle to use the Obsidian vault as agent cwd per chat
 - Optional site login (`AUTH_USERNAME` / `AUTH_PASSWORD`)
 - ASD-STE100 reply style guide on the first message of each chat
-- Optional Obsidian sync: Topics (and Saved stories) write linked markdown under `Brief/` in a local vault (Settings → Obsidian). Enable **Use vault as chat workspace** so agents can read those notes.
+- Optional Obsidian sync: Topics (and Saved stories) write linked markdown under `Brief/` in a local vault (Settings → Obsidian). Per-chat **Vault** uses that vault as the agent workspace.
 
 ## Obsidian vault contract
 
@@ -54,13 +55,11 @@ You can also paste the API key in **Settings** instead of using the environment 
 
 | App action | SDK call |
 | --- | --- |
-| First message in a chat | `Agent.create({ local: { cwd }, model, mcpServers })` |
-| Later messages / process restart | `Agent.resume(agentId, { local, model, mcpServers })` |
+| First message in a chat | `Agent.create({ local: { cwd }, model })` |
+| Later messages / process restart | `Agent.resume(agentId, { local, model })` |
 | Stream tokens and tools | `agent.send()` + `onDelta` + `run.wait()` |
 | Stop generation | `run.cancel()` |
 | Delete a chat | `Agent.delete(agentId)` |
-
-Inline MCP servers are not persisted by the SDK. The server keeps your list in `data/settings.json` and sends it again on resume.
 
 ## Production
 

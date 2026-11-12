@@ -61,8 +61,12 @@ export function resolveObsidianSync(settings: AppSettings): ObsidianSyncOptions 
 }
 
 /** Resolve the cwd used by local agents (chat + Topics). */
-export function resolveAgentWorkspace(settings: AppSettings): string {
-  if (settings.obsidianEnabled && settings.obsidianUseAsWorkspace) {
+export function resolveAgentWorkspace(
+  settings: AppSettings,
+  overrides?: { useObsidianWorkspace?: boolean },
+): string {
+  const useVault = overrides?.useObsidianWorkspace ?? settings.obsidianUseAsWorkspace;
+  if (settings.obsidianEnabled && useVault) {
     return settings.obsidianVault?.trim() || DEFAULT_OBSIDIAN_VAULT;
   }
   return settings.workspace;
